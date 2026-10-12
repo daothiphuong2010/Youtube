@@ -1,15 +1,22 @@
 // Thin AI adapter. The rest of the app only calls askJSON(settings, system, user).
 // Swap provider = change settings; add a provider = add one function to PROVIDERS.
+import { pacerFor, DayLimit } from './pacer.js';
+export { DayLimit };
 
+// rpm/tpm/rpd = requests per minute, input tokens per minute, requests per day (0 = no limit).
+// Prefilled guesses, editable in Settings: Google doesn't publish free-tier numbers; each key's
+// real limits are at https://aistudio.google.com/rate-limit . target = % of the limits to use.
 export const PRESETS = {
-  'gemini-free': { provider: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', model: 'gemini-2.5-flash', free: true, rpm: 10, priceIn: 0, priceOut: 0 },
-  'claude-haiku': { provider: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-haiku-5-5', free: false, rpm: 50, priceIn: 0.10, priceOut: 0.50 },
-  'custom': { provider: 'openai', baseUrl: '', model: '', free: false, rpm: 20, priceIn: 0, priceOut: 0 },
+  'gemini-free': { provider: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', model: 'gemini-2.5-flash', free: true, rpm: 5, tpm: 250000, rpd: 20, target: 80, priceIn: 0, priceOut: 0 },
+  'claude-haiku': { provider: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-haiku-5-5', free: false, rpm: 50, tpm: 50000, rpd: 0, target: 80, priceIn: 0.10, priceOut: 0.50 },
+  'custom': { provider: 'openai', baseUrl: '', model: '', free: false, rpm: 20, tpm: 0, rpd: 0, target: 80, priceIn: 0, priceOut: 0 },
 };
 export const DEFAULT_PRESET = 'gemini-free';
 
 export class AIError extends Error {
-  constructor(msg, { retry = false, waitMs = 0 } = {}) { super(msg); this.retry = retry; this.waitMs = waitMs; }
+  constructor(msg, { retry = false, waitMs = 0, status = 0, daily = false } = {}) {
+    super(msg); Object.assign(this, { retry, waitMs, status, daily });
+  }
 }
 
 const trim = u => (u || '').replace(/\/$/, '');
@@ -26,15 +33,15 @@ async function post(url, headers, body) {
     const err = data?.error || data?.[0]?.error || {};
     const msg = err.message || res.statusText;
     const details = JSON.stringify(err.details || '');
-    if (res.status === 429 && /PerDay/i.test(details + msg)) {
-      throw new AIError('Hết lượt miễn phí hôm nay của model này. Phần đã xong được giữ lại; mai bấm chạy tiếp, hoặc đổi model trong ⚙️ Cài đặt.');
-    }
     const delay = (details.match(/"retryDelay":"(\d+(?:\.\d+)?)s"/) || [])[1];
     const after = res.headers.get('retry-after');
     const waitMs = delay ? delay * 1000 : after ? (+after || 0) * 1000 : 0;
+    if (res.status === 429 && /PerDay/i.test(details + msg)) {
+      throw new AIError('Hết lượt miễn phí hôm nay của model này.', { status: 429, daily: true, waitMs });
+    }
     const retry = res.status === 429 || res.status >= 500;
     const hint = res.status === 404 ? ' (tên model sai? bấm "Kiểm tra key" trong ⚙️ Cài đặt để xem model có sẵn)' : '';
-    throw new AIError(`AI báo lỗi ${res.status}: ${msg}${hint}`, { retry, waitMs });
+    throw new AIError(`AI báo lỗi ${res.status}: ${msg}${hint}`, { retry, waitMs, status: res.status });
   }
   return data;
 }
@@ -93,29 +100,46 @@ export function parseJSON(text) {
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-let lastCall = 0;
 
-// Queue + pacing (requests per minute) + retry with backoff for free-tier limits.
+// Paced call with retries. The pacer (one per model) keeps requests and input tokens per minute
+// under the limits; a 429 honors the server's retryDelay and slows the pace; other transient
+// errors back off exponentially. A daily-quota stop throws DayLimit (with resumeAt).
 // onWait(seconds, reason) lets the UI show "waiting".
-export async function askJSON(s, system, user, maxTokens = 8000, { onWait = () => {}, tries = 7, wait = sleep } = {}) {
+export async function askJSON(s, system, user, maxTokens = 8000, { onWait = () => {}, tries = 6, wait = sleep, pacer = pacerFor(s), ignoreDay = false } = {}) {
   if (!s.apiKey) throw new AIError('Chưa có API key. Mở ⚙️ Cài đặt để dán key.');
   const fn = PROVIDERS[s.provider];
   if (!fn) throw new AIError('Provider không hỗ trợ: ' + s.provider);
-  for (let n = 1; ; n++) {
-    const gap = 60000 / Math.max(1, +s.rpm || 10) - (Date.now() - lastCall);
-    if (gap > 0) { onWait(Math.ceil(gap / 1000), 'giãn nhịp theo hạn mức'); await wait(gap); }
-    lastCall = Date.now();
+  const chars = system.length + user.length;
+  let fails = 0, limited = 0;
+  for (;;) {
+    const tok = pacer.tokensFor(chars);
+    for (let d; (d = pacer.delay(tok, { ignoreDay })) > 0;) {
+      onWait(Math.ceil(d / 1000), limited ? 'AI báo quá tải, đang giãn nhịp' : 'giữ dưới hạn mức mỗi phút');
+      await wait(Math.min(d, 30000)); // re-check at least every 30 s
+    }
+    const entry = pacer.record(tok);
     try {
       const r = await fn(s, system, user, maxTokens);
+      pacer.onSuccess(entry, chars, r.inTok);
       try {
         return { ...r, json: parseJSON(r.text) };
       } catch (e) {
         throw new AIError((r.truncated ? 'Câu trả lời bị cắt. ' : '') + 'JSON lỗi: ' + e.message, { retry: true });
       }
     } catch (e) {
-      if (!(e instanceof AIError) || !e.retry || n >= tries) throw e;
-      const ms = Math.min(120000, e.waitMs || 2000 * 2 ** n) + Math.random() * 1000;
-      onWait(Math.ceil(ms / 1000), 'AI bận/hết hạn mức phút, thử lại lần ' + (n + 1));
+      if (e instanceof AIError && e.daily) {
+        pacer.exhaustDay();
+        throw new DayLimit(Math.max(pacer.resumeAt(), pacer.now() + (e.waitMs || 0)), e.message);
+      }
+      if (e instanceof AIError && e.status === 429) {
+        // Per-minute limit: wait as told, slow down, try again (no fixed cap; the pacer spaces it).
+        if (++limited > 40) throw e;
+        pacer.on429(e.waitMs);
+        continue;
+      }
+      if (!(e instanceof AIError) || !e.retry || ++fails >= tries) throw e;
+      const ms = Math.min(120000, 2000 * 2 ** fails) + Math.random() * 1000;
+      onWait(Math.ceil(ms / 1000), 'AI lỗi tạm thời, thử lại lần ' + (fails + 1));
       await wait(ms);
     }
   }

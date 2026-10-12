@@ -23,7 +23,9 @@ Không có máy chủ: trang tĩnh trên GitHub Pages, key nằm trong trình du
 
 1. Mở video YouTube → bấm dấu trang **🎬 YT Scenes**.
 2. Trang tự mở: có ngay **đoạn 5 phút + từ khóa + "lần đầu xuất hiện" + biểu đồ mật độ** (miễn phí, không cần key).
-3. Muốn chia cảnh + chấm điểm: bấm **Chia cảnh + chấm điểm bằng AI** (hiện chi phí $0 với gói miễn phí). Đứt giữa chừng thì bấm lại, chạy tiếp từ chỗ dừng.
+3. Muốn chia cảnh + chấm điểm: bấm **Chia cảnh + chấm điểm bằng AI** (hiện chi phí $0 với gói miễn phí). Cảnh hiện dần ngay khi từng phần xong, có thanh tiến độ + thời gian còn lại.
+   - **Giữ tab mở** (để ở nền cũng được) trong lúc AI chạy. Lỡ đóng tab: lần sau mở trang sẽ tự chạy tiếp, phần đã xong không làm lại.
+   - Hết lượt miễn phí trong ngày: trang hiện **"Tiếp tục lúc …"** (0h giờ Mỹ Thái Bình Dương, tức khoảng 14h–15h giờ Việt Nam) và tự chạy tiếp lúc đó nếu trang đang mở, hoặc khi bạn mở lại trang.
 
 Bấm **▶ Mở video tại đây** ở bất kỳ cảnh, đoạn văn hay kết quả tìm kiếm nào để nghe đúng chỗ đó. Trang không hiện mốc giờ.
 Không lấy được bản chép lời? Mở bản chép lời trên YouTube, copy, rồi **dán** hoặc **kéo thả file .txt** vào trang; điền link + thời lượng video để có nút mở video (thời gian được ước tính theo vị trí chữ).
@@ -36,11 +38,12 @@ Không lấy được bản chép lời? Mở bản chép lời trên YouTube, c
 | Làm sạch | Không | Bỏ mốc giờ (`12:34`, "27 phút, 36 giây"), `[Âm nhạc]`, câu quảng cáo đầu/cuối, ghép thành câu có đánh số |
 | Từ khóa miễn phí | Không | TF-IDF mỗi đoạn ~5 phút, đánh dấu tên/khái niệm **lần đầu xuất hiện**, biểu đồ mật độ từ khóa dọc video |
 | Tìm kiếm | Không | Từ khóa + toàn văn, gõ không dấu được, hiểu **bảng tên nghe nhầm** (vd `Đen Di = Denji`) |
-| Chia cảnh (AI) | Có (miễn phí) | Gửi từng đoạn ~1 giờ, AI chỉ trả JSON (câu bắt đầu, tiêu đề, từ khóa theo loại, 1 dòng tóm tắt). Không viết lại truyện. Có hàng đợi, giãn nhịp, tự thử lại khi bị giới hạn |
+| Chia cảnh (AI) | Có (miễn phí) | Gửi từng đoạn ~1 giờ, AI chỉ trả JSON (câu bắt đầu, tiêu đề, từ khóa theo loại, 1 dòng tóm tắt). Không viết lại truyện. Chạy chậm mà chắc: giữ dưới ~80% hạn mức lượt/phút và token/phút, bị báo quá tải thì chờ đúng thời gian Google yêu cầu rồi tự chậm lại, hết lượt/ngày thì tạm dừng và tự chạy tiếp |
 | Điểm + cốt truyện (AI) | Có (miễn phí) | 1 lần gọi nhỏ từ các tóm tắt cảnh |
 | Lưu | Không | Mọi video nằm trong 1 kho cục bộ (IndexedDB). Mở lại = 0 lượt gọi AI |
 
 **Bảng tên nghe nhầm**: ⚙️ Cài đặt → mỗi dòng `sai, sai = đúng`. Dùng cho tìm kiếm, từ khóa miễn phí, và gửi kèm cho AI.
+**Hạn mức**: ⚙️ Cài đặt → *Hạn mức AI* đã điền sẵn (Gemini Flash miễn phí: 5 lượt/phút, 250.000 token/phút, 20 lượt/ngày). Google không công bố số cố định; số thật của key bạn ở [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit), sửa lại cho khớp nếu khác. Video rất dài mà ít lượt/ngày: tăng *Mỗi lượt AI đọc bao nhiêu phút audio* (vd 120) để cần ít lượt hơn.
 **Đổi AI**: ⚙️ Cài đặt → Gemini (mặc định) / Claude Haiku (trả phí, rất rẻ) / API kiểu OpenAI. Tên model sửa được; **Kiểm tra key** liệt kê model có sẵn.
 
 ## Liên kết

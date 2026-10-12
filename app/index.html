@@ -34,13 +34,22 @@
     <label>Bảng tên nghe nhầm (mỗi dòng: <code>sai, sai = đúng</code>)
       <textarea name="glossary" rows="4" placeholder="Đen Di, đen đi = Denji&#10;ma ki ma = Makima"></textarea>
     </label>
+    <details><summary>Hạn mức AI (đã điền sẵn, chỉ sửa nếu cần)</summary>
+      <div class="stack">
+        <p class="muted">Trang tự giãn nhịp để không vượt hạn mức, nên chạy chậm mà chắc. Hạn mức thật của key bạn xem ở <a href="https://aistudio.google.com/rate-limit" target="_blank" rel="noopener">aistudio.google.com/rate-limit</a>. Số 0 = không giới hạn.</p>
+        <label>Lượt gọi mỗi phút (RPM) <input name="rpm" type="number" min="0"></label>
+        <label>Token gửi lên mỗi phút (TPM) <input name="tpm" type="number" min="0" step="1000"></label>
+        <label>Lượt gọi mỗi ngày (RPD, tính lại lúc 0h giờ Mỹ Thái Bình Dương) <input name="rpd" type="number" min="0"></label>
+        <label>Chỉ dùng tới % hạn mức <input name="target" type="number" min="10" max="100"></label>
+        <label>Mỗi lượt AI đọc bao nhiêu phút audio (to hơn = ít lượt hơn; áp dụng cho truyện chưa chạy AI) <input name="winMin" type="number" min="10" max="240" step="10"></label>
+      </div>
+    </details>
     <details><summary>Nâng cao</summary>
       <div class="stack">
         <label>Kiểu API
           <select name="provider"><option value="gemini">Gemini</option><option value="anthropic">Anthropic (Claude)</option><option value="openai">OpenAI-compatible</option></select>
         </label>
         <label>Địa chỉ API <input name="baseUrl"></label>
-        <label>Số lượt gọi tối đa mỗi phút <input name="rpm" type="number" min="1"></label>
         <label class="row"><input name="free" type="checkbox" style="width:auto"> Gói miễn phí (chi phí hiển thị $0)</label>
         <label>Giá input $/1M token <input name="priceIn" type="number" step="0.01"></label>
         <label>Giá output $/1M token <input name="priceOut" type="number" step="0.01"></label>

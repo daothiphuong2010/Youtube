@@ -8,7 +8,9 @@ export function loadSettings() {
   let s = {};
   try { s = JSON.parse(localStorage.getItem(SKEY) || '{}'); } catch { /* ignore */ }
   const preset = s.preset || DEFAULT_PRESET;
-  return { ...PRESETS[preset], preset, apiKey: '', ...s };
+  // v1 saved the old Gemini default (10 calls/min), which overloads the free tier: use the new prefill.
+  if (!s.v && preset === 'gemini-free' && +s.rpm === 10) delete s.rpm;
+  return { ...PRESETS[preset], preset, apiKey: '', winMin: 60, ...s, v: 2 };
 }
 
 export function saveSettings(s) {
@@ -39,10 +41,29 @@ async function tx(mode, fn) {
 export const getStory = id => tx('readonly', st => st.get(id));
 export const putStory = story => tx('readwrite', st => st.put(story));
 export const deleteStory = id => tx('readwrite', st => st.delete(id));
+// Read-modify-write in one transaction, so an AI job and a page edit never overwrite each other.
+export async function patchStory(id, patch) {
+  const d = await db();
+  return new Promise((ok, bad) => {
+    const t = d.transaction('stories', 'readwrite'), st = t.objectStore('stories');
+    let out;
+    st.get(id).onsuccess = e => {
+      out = { ...(e.target.result || { id }), ...patch, updatedAt: Date.now() };
+      for (const k of Object.keys(patch)) if (patch[k] === undefined) delete out[k];
+      st.put(out);
+    };
+    t.oncomplete = () => ok(out);
+    t.onerror = () => bad(t.error);
+  });
+}
+// Stories with an unfinished AI run (to resume on page open).
+export async function listJobs() {
+  return ((await tx('readonly', st => st.getAll())) || []).filter(r => r.aiJob && !r.sections);
+}
 export async function listStories() {
   const all = await tx('readonly', st => st.getAll());
-  return (all || []).filter(r => r.segments).map(({ id, title, channel, mode, overview, updatedAt, sections }) =>
-    ({ id, title, channel, mode, overview, updatedAt, nSections: sections?.length || 0 }))
+  return (all || []).filter(r => r.segments).map(({ id, title, channel, mode, overview, updatedAt, sections, aiJob, parts }) =>
+    ({ id, title, channel, mode, overview, updatedAt, nSections: sections?.length || 0, aiJob: sections ? null : aiJob, nParts: parts?.filter(Boolean).length || 0 }))
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 

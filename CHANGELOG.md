@@ -2,6 +2,7 @@
 
 | Date | Change |
 |---|---|
+| 2026-10-12 | v0.3.0: reliable AI runs on the free tier. Pacing keeps requests/min and input tokens/min under ~80% of editable limits (prefilled 5 RPM, 250k TPM, 20 RPD for Gemini Flash free), honors the server's retryDelay on 429 and slows down adaptively, then speeds up slowly. Daily quota: run pauses, shows "Tiếp tục lúc …" (midnight Pacific), resumes on its own while the page is open or when it is opened again; finished chunks are never redone. Scenes appear as each chunk finishes, with a progress bar and ETA; runs continue when you go back to the shelf; one tab per story. New setting: minutes of audio per AI call. |
 | 2026-10-12 | v0.2.1: free keywords no longer cut across words (longest frequent phrase wins, fragments glued to a neighbor rejected, Vietnamese edge stopwords, overlapping terms dropped). Density chart defaults to the most clustered keyword, counts the whole phrase, and any keyword chip can be clicked to chart it. Removed the stray "null" beside the 5-minute tab. |
 | 2026-10-12 | v0.2.0: own public repo `Youtube` + GitHub Pages. Gemini free key by default (queue, pacing, retry, resume, $0 display); free no-AI layer (TF-IDF per 5-min block, first appearance, density chart); video links on every section/paragraph/hit, no visible timestamps; misheard-name glossary; generic data format + `modes.js` (fanfic; podcast/lecture stubs). |
 | 2026-10-12 | v0.1.0 (in SuperTools PR #3): bookmarklet, cleanup, ~1h-window AI scene pass, keyword index, search, cost estimate, local cache. |

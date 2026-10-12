@@ -1,12 +1,13 @@
 // App wiring: input (bookmarklet message / drop / paste), story page, AI run, settings, shelf.
 import { h } from './dom.js';
 import { clean, parseText, parseClock } from './cleanup.js';
-import { runSections } from './scenes.js';
+import { runSections, makeWindows, partialSections, estimate } from './scenes.js';
 import { modeOf, DEFAULT_MODE } from './modes.js';
-import { askJSON, listModels, PRESETS } from './ai.js';
+import { askJSON, listModels, PRESETS, DayLimit } from './ai.js';
+import { pacerFor } from './pacer.js';
 import { fillTimes } from './algo.js';
 import { parseGlossary } from './glossary.js';
-import { loadSettings, saveSettings, getStory, putStory, deleteStory, listStories, storyId } from './store.js';
+import { loadSettings, saveSettings, getStory, putStory, patchStory, deleteStory, listStories, listJobs, storyId } from './store.js';
 import { renderStory } from './view.js';
 
 const view = document.getElementById('view');
@@ -64,7 +65,9 @@ async function home(error) {
   const shelf = h('ul', { class: 'shelf' });
   listStories().then(items => shelf.replaceChildren(...(items.length ? items.map(it => h('li', {},
     h('a', { href: '#id=' + encodeURIComponent(it.id) }, `${it.overview ? it.overview.score + '/10 · ' : ''}${it.title || it.id}`),
-    h('span', { class: 'muted' }, ` · ${it.channel || ''} · ${it.nSections ? it.nSections + ' ' + modeOf(it).unit + ' AI' : 'chỉ phần miễn phí'} `),
+    it.aiJob ? h('span', { class: 'muted' }, ' · ' + (jobs.has(it.id) || it.aiJob.state === 'running' ? `⏳ AI đang chạy (xong ${it.nParts} phần)`
+      : it.aiJob.state === 'day' ? `⏸ AI tiếp tục lúc ${fmtWhen(it.aiJob.resumeAt)}` : '⚠️ AI tạm dừng, mở để chạy tiếp')) : null,
+    h('span', { class: 'muted' }, ` · ${it.channel ? it.channel + ' · ' : ''}${it.nSections ? it.nSections + ' ' + modeOf(it).unit + ' AI' : 'chỉ phần miễn phí'} `),
     h('button', { onclick: async () => { if (confirm('Xóa truyện này khỏi máy?')) { await deleteStory(it.id); home(); } } }, '🗑')))
     : [h('li', { class: 'muted' }, 'Chưa có truyện nào.')]))).catch(() => {});
   view.replaceChildren(
@@ -78,50 +81,121 @@ async function home(error) {
     h('div', { class: 'card' }, h('h2', {}, '📚 Kệ truyện'), shelf));
 }
 
-function show(rec) {
-  const sents = fillTimes(rec.segments, rec.duration);
-  renderStory(view, rec, sents, {
-    settings, glossary: glossary(),
-    saveMeta: async (url, dur) => {
-      const videoId = parseVideoId(url);
-      const sec = /^\d+(:\d{1,2}){0,2}$/.test(dur.trim()) ? parseClock(dur) : null;
-      Object.assign(rec, { url: url.trim(), durationText: dur.trim(), ...(videoId ? { video_id: videoId } : {}), ...(sec ? { duration: sec } : {}) });
-      await putStory({ ...rec, updatedAt: Date.now() });
-      show(rec);
-    },
-    runAI: ui => run(rec, sents, ui),
-  });
-  document.title = (rec.title || 'Video') + ' · YT Scenes';
+// ---------- AI jobs ----------
+// One job per story. It keeps running if you go back to the shelf (the tab must stay open, in
+// the background is fine). Progress is saved on the story after every chunk (parts + aiJob), so
+// a closed tab or an empty daily quota never loses finished chunks: the next page open resumes.
+const jobs = new Map();   // story id -> {progress()}
+const timers = new Map(); // story id -> timer that resumes after the daily quota resets
+let screen = null;        // {id, api} of the story on screen
+const report = (id, fn) => { if (screen?.id === id) fn(screen.api); };
+const fmtWhen = t => { const d = new Date(t), p = n => String(n).padStart(2, '0'); return `${p(d.getHours())}:${p(d.getMinutes())} ngày ${d.getDate()}/${d.getMonth() + 1}`; };
+const fmtDur = sec => (sec < 90 ? `${Math.round(sec)} giây` : sec < 5400 ? `${Math.round(sec / 60)} phút` : `${(sec / 3600).toFixed(1)} giờ`);
+const pausedText = (job, done, total) => `⏸ Hết lượt miễn phí hôm nay (đã xong ${done}/${total}). Tiếp tục lúc ${fmtWhen(job.resumeAt)}: tự chạy nếu trang đang mở, hoặc khi bạn mở lại trang.`;
+
+function schedule(rec) {
+  clearTimeout(timers.get(rec.id));
+  if (rec.aiJob?.state !== 'day') return;
+  timers.set(rec.id, setTimeout(() => getStory(rec.id).then(r => r && !r.sections && run(r)), Math.max(0, rec.aiJob.resumeAt - Date.now())));
 }
 
-async function run(story, sents, ui) {
+async function run(rec, { ignoreDay = false } = {}) {
+  if (jobs.has(rec.id)) return;
+  const job = {};
+  jobs.set(rec.id, job);
+  // Only one tab works on a story at a time (two open tabs would double the requests).
+  const locked = fn => (navigator.locks ? navigator.locks.request('ytscenes:' + rec.id, { ifAvailable: true }, l => (l ? fn() : null)) : fn());
+  try { await locked(() => work(rec, job, ignoreDay)); } finally { jobs.delete(rec.id); report(rec.id, a => a.running(false)); }
+}
+
+async function work(rec, job, ignoreDay) {
+  clearTimeout(timers.get(rec.id));
   const s = { ...settings };
-  const ask = (sys, user, max) => askJSON(s, sys, user, max, { onWait: (sec, why) => ui.status(`Đang chờ ${sec}s (${why})…`) });
+  const sents = fillTimes(rec.segments, rec.duration);
+  const winMin = rec.winMin || +s.winMin || 60; // fixed per story, so a resume lines up with saved chunks
+  const total = makeWindows(sents, winMin).length + 1;
+  const pacer = pacerFor(s);
+  const est = estimate(sents, { ...s, winMin });
+  const parts = rec.parts ? [...rec.parts] : [];
+  let usage = { ...(rec.usage || {}) };
+  const n0 = parts.filter(Boolean).length, t0 = Date.now();
+  let done = n0;
+  const save = patch => patchStory(rec.id, patch).then(r => Object.assign(rec, r)).catch(() => {});
+  await save({ winMin, aiJob: { state: 'running' } });
+  const status = t => report(rec.id, a => a.status(t));
+  job.progress = () => {
+    const left = total - done;
+    const per = done > n0 ? (Date.now() - t0) / 1000 / (done - n0) : est.minutes * 60 / est.requests;
+    const dayLeft = ignoreDay ? Infinity : pacer.dayLeft();
+    const eta = left > dayLeft ? `cần thêm ${Math.ceil((left - dayLeft) / Math.max(1, pacer.rpd))} ngày nữa (hạn mức ${pacer.rpd} lượt/ngày)` : `còn khoảng ${fmtDur(left * per)}`;
+    report(rec.id, a => { a.running(true); a.progress(done, total, eta); });
+    document.title = `(${done}/${total}) ${rec.title || 'Video'} · YT Scenes`;
+  };
+  const ask = (sys, user, max) => askJSON(s, sys, user, max, { pacer, ignoreDay, onWait: (sec, why) => status(`Đang chờ ${sec}s (${why})…`) });
   try {
     const res = await runSections({
-      sents, rec: story, mode: modeOf(story), ask, glossary: glossary(),
-      saved: { parts: story.parts, inTok: story.usage?.inTok, outTok: story.usage?.outTok },
-      onProgress: (n, total) => { ui.frac(n / total); ui.status(n < total ? `Đoạn ${n + 1}/${total}…` : 'Đang viết tóm tắt + chấm điểm…'); },
-      onWindow: async (n, part, usage) => {
-        story.parts = story.parts || []; story.parts[n] = part; story.usage = { ...usage };
-        await putStory({ ...story, updatedAt: Date.now() }).catch(() => {});
+      sents, rec, mode: modeOf(rec), ask, glossary: glossary(), winMin,
+      saved: { parts, inTok: usage.inTok, outTok: usage.outTok },
+      onProgress: n => { done = n; job.progress(); status(n < total - 1 ? `Đang gửi phần ${n + 1}/${total - 1}…` : 'Đang viết tóm tắt + chấm điểm…'); },
+      onWindow: async (n, part, u) => {
+        parts[n] = part; usage = { ...u }; done = n + 1;
+        await save({ parts, usage });
+        report(rec.id, a => a.sections(partialSections(sents, parts, winMin)));
+        job.progress();
       },
     });
     res.usage.free = !!s.free;
     res.usage.usd = s.free ? 0 : (res.usage.inTok * s.priceIn + res.usage.outTok * s.priceOut) / 1e6;
-    Object.assign(story, res, { glossary: glossary(), model: s.model, updatedAt: Date.now() });
-    delete story.parts;
-    await putStory(story);
-    show(story);
+    await save({ ...res, glossary: glossary(), model: s.model, parts: undefined, aiJob: undefined });
+    document.title = (rec.title || 'Video') + ' · YT Scenes';
+    if (screen?.id === rec.id) show(rec);
   } catch (e) {
-    ui.status('⚠️ ' + e.message + ' (phần đã xong được giữ lại; bấm lại để chạy tiếp)');
+    if (e instanceof DayLimit) {
+      await save({ aiJob: { state: 'day', resumeAt: e.resumeAt } });
+      schedule(rec);
+      status(pausedText(rec.aiJob, done, total));
+      report(rec.id, a => a.paused());
+    } else {
+      await save({ aiJob: { state: 'error', message: e.message } });
+      status('⚠️ ' + e.message + ' (phần đã xong được giữ lại; bấm "Chạy tiếp AI" để chạy tiếp)');
+    }
   }
+}
+
+// On page open: resume runs that were interrupted or are waiting for a new day.
+async function resumeJobs() {
+  for (const r of await listJobs().catch(() => [])) {
+    if (r.aiJob.state === 'running' || (r.aiJob.state === 'day' && r.aiJob.resumeAt <= Date.now())) run(r);
+    else schedule(r);
+  }
+}
+
+function show(rec) {
+  const sents = fillTimes(rec.segments, rec.duration);
+  const api = renderStory(view, rec, sents, {
+    settings, glossary: glossary(),
+    partial: rec.sections ? null : partialSections(sents, rec.parts, rec.winMin || settings.winMin),
+    saveMeta: async (url, dur) => {
+      const videoId = parseVideoId(url);
+      const sec = /^\d+(:\d{1,2}){0,2}$/.test(dur.trim()) ? parseClock(dur) : null;
+      show(await patchStory(rec.id, { url: url.trim(), durationText: dur.trim(), ...(videoId ? { video_id: videoId } : {}), ...(sec ? { duration: sec } : {}) }));
+    },
+    runAI: opts => getStory(rec.id).then(r => run(r || rec, opts)),
+  });
+  screen = { id: rec.id, api };
+  document.title = (rec.title || 'Video') + ' · YT Scenes';
+  if (jobs.has(rec.id)) jobs.get(rec.id).progress?.();
+  else if (rec.aiJob?.state === 'day') {
+    api.status(pausedText(rec.aiJob, rec.parts?.filter(Boolean).length || 0, makeWindows(sents, rec.winMin || settings.winMin).length + 1));
+    api.paused();
+  }
+  else if (rec.aiJob?.state === 'error') api.status('⚠️ Lần trước dừng vì: ' + rec.aiJob.message);
 }
 
 // ---------- routing ----------
 async function route() {
   const m = location.hash.match(/^#id=(.+)$/);
-  if (!m) return home();
+  if (!m) { screen = null; return home(); }
   const story = await getStory(decodeURIComponent(m[1])).catch(() => null);
   if (!story) return home('Không tìm thấy truyện này trong máy.');
   show(story);
@@ -155,10 +229,13 @@ document.getElementById('btn-check').onclick = async () => {
 dlg.addEventListener('close', () => {
   if (dlg.returnValue !== 'save') return;
   const f = Object.fromEntries(new FormData(form));
-  settings = { ...f, free: F.free.checked, apiKey: (f.apiKey || '').trim(), rpm: +f.rpm || 10, priceIn: +f.priceIn || 0, priceOut: +f.priceOut || 0 };
+  const num = (k, d) => (f[k] === '' || f[k] == null || Number.isNaN(+f[k]) ? d : +f[k]);
+  settings = { ...f, v: 2, free: F.free.checked, apiKey: (f.apiKey || '').trim(), rpm: num('rpm', 5), tpm: num('tpm', 0), rpd: num('rpd', 0),
+    target: Math.min(100, Math.max(10, num('target', 80))), winMin: Math.max(10, num('winMin', 60)), priceIn: num('priceIn', 0), priceOut: num('priceOut', 0) };
   saveSettings(settings);
   route();
 });
 
 if (location.hash === '#yt') { history.replaceState(null, '', location.pathname); view.replaceChildren(h('p', { class: 'card' }, '⏳ Đang chờ bản chép lời từ YouTube…')); }
 else route();
+resumeJobs();

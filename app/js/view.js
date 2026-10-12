@@ -12,13 +12,15 @@ export const videoLink = (rec, t) =>
   rec.video_id && t != null ? `https://youtu.be/${rec.video_id}?t=${Math.max(0, Math.floor(t))}` : null;
 
 // rec = one video record (generic format), sents = its segments with times filled in.
-export function renderStory(root, rec, sents, { settings, glossary, runAI, saveMeta }) {
+// partial = sections from the AI chunks finished so far (shown while the AI is still running).
+// Returns {status, progress, sections, running} so a running AI job can update the page in place.
+export function renderStory(root, rec, sents, { settings, glossary, runAI, saveMeta, partial = null }) {
   const mode = modeOf(rec), CATS = mode.categories;
-  const scenes = rec.sections;
+  let scenes = rec.sections || partial;
   const free = analyze(sents, makeBlocks(sents), glossary);
   const blocks = free.blocks;
-  const index = scenes ? buildIndex(scenes, CATS) : null;
-  let tab = scenes ? 'scenes' : 'blocks', q = '', pick = null; // pick = {name, units:[n]}
+  let index = scenes ? buildIndex(scenes, CATS) : null;
+  let tab = scenes ? 'scenes' : 'blocks', q = '', pick = null, userTab = false; // pick = {name, units:[n]}
   let chartTerm = null; // keyword clicked to chart; default = most clustered (bursty) keyword
 
   const go = (t, label = '▶ Mở video tại đây') => {
@@ -65,7 +67,9 @@ export function renderStory(root, rec, sents, { settings, glossary, runAI, saveM
     const units = tab === 'scenes' ? scenes : blocks;
     let rows = q.trim() ? search(q, units, sents, glossary) : units.map((_, n) => ({ n }));
     if (pick && pick.tab === tab) rows = rows.filter(r => pick.units.includes(r.n));
+    const open = new Set([...list.querySelectorAll('details[open]')].map(d => d.id)); // keep what you were reading
     list.replaceChildren(...rows.map(r => unitEl(units[r.n], r.n, r)));
+    for (const d of list.querySelectorAll('details')) if (open.has(d.id)) d.open = true;
     count.textContent = (q.trim() || pick) ? `${rows.length}/${units.length} khớp` + (pick ? ` · lọc: ${pick.name}` : '')
       : `${units.length} ${tab === 'scenes' ? mode.unit : 'đoạn ~5 phút'}`;
     drawChart(); drawIndex(); drawTabs();
@@ -104,21 +108,32 @@ export function renderStory(root, rec, sents, { settings, glossary, runAI, saveM
 
   function drawTabs() {
     tabsBox.replaceChildren(...[
-      scenes ? h('button', { class: tab === 'scenes' ? 'on' : '', onclick: () => { tab = 'scenes'; draw(); } }, `🎬 ${mode.unit[0].toUpperCase() + mode.unit.slice(1)} (AI) · ${scenes.length}`) : null,
-      h('button', { class: tab === 'blocks' ? 'on' : '', onclick: () => { tab = 'blocks'; draw(); } }, `⏱ Đoạn 5 phút (miễn phí) · ${blocks.length}`)].filter(Boolean)); // null would render as text
+      scenes ? h('button', { class: tab === 'scenes' ? 'on' : '', onclick: () => { tab = 'scenes'; userTab = true; draw(); } }, `🎬 ${mode.unit[0].toUpperCase() + mode.unit.slice(1)} (AI) · ${scenes.length}`) : null,
+      h('button', { class: tab === 'blocks' ? 'on' : '', onclick: () => { tab = 'blocks'; userTab = true; draw(); } }, `⏱ Đoạn 5 phút (miễn phí) · ${blocks.length}`)].filter(Boolean)); // null would render as text
   }
 
   const input = h('input', { type: 'search', placeholder: '🔎 Tìm nhân vật, sức mạnh, địa điểm, hoặc bất kỳ chữ nào… (gõ không dấu cũng được)',
     oninput: () => { q = input.value; clearTimeout(input._t); input._t = setTimeout(draw, 150); } });
 
+  const top = header(rec, sents, mode, { settings, runAI, saveMeta });
   root.replaceChildren(
-    header(rec, sents, mode, { settings, runAI, saveMeta }),
+    top.card,
     h('div', { class: 'search' }, input, count),
     h('div', { class: 'card' }, chartBox),
     tabsBox,
     h('div', { class: 'card' }, h('b', {}, 'Mục lục từ khóa'), h('span', { class: 'muted' }, ' — bấm để lọc'), idxBox),
     list);
   draw();
+  return {
+    ...top.api,
+    // New AI chunk done: show its scenes now (switch to them once, unless you picked a tab).
+    sections(secs) {
+      if (!secs || rec.sections) return;
+      scenes = secs; index = buildIndex(scenes, CATS);
+      if (tab === 'blocks' && !userTab) tab = 'scenes';
+      if (tab === 'scenes') draw(); else drawTabs();
+    },
+  };
 }
 
 function header(rec, sents, mode, { settings, runAI, saveMeta }) {
@@ -137,22 +152,31 @@ function header(rec, sents, mode, { settings, runAI, saveMeta }) {
     const dur = h('input', { placeholder: 'Thời lượng, vd 20:15:00', value: rec.durationText || '' });
     card.append(h('div', { class: 'fields' }, link, dur, h('button', { onclick: () => saveMeta(link.value, dur.value) }, 'Lưu')));
   }
+  const api = { status() {}, progress() {}, running() {}, paused() {} };
   if (!rec.sections) {
-    const est = estimate(sents, settings);
-    const status = h('div', { class: 'muted' });
+    const est = estimate(sents, { ...settings, winMin: rec.winMin || settings.winMin });
+    const status = h('div', { class: 'muted' }), ptext = h('div', { class: 'muted' });
     const bar = h('div'), prog = h('div', { class: 'progress', hidden: true }, bar);
-    const btn = h('button', { class: 'primary', onclick: async () => {
-      btn.disabled = true; prog.hidden = false;
-      await runAI({ status: t => { status.textContent = t; }, frac: f => { bar.style.width = (100 * f) + '%'; } });
-      btn.disabled = false;
-    } }, `Chia ${mode.unit} + chấm điểm bằng AI`);
+    const btn = h('button', { class: 'primary', onclick: () => runAI() }, rec.parts ? 'Chạy tiếp AI' : `Chia ${mode.unit} + chấm điểm bằng AI`);
+    const now = h('button', { hidden: rec.aiJob?.state !== 'day', title: 'Bỏ qua bộ đếm lượt/ngày trong máy và thử gửi ngay (nếu Google còn lượt thì chạy tiếp)',
+      onclick: () => runAI({ ignoreDay: true }) }, 'Thử ngay');
+    const time = est.days > 1
+      ? `khoảng ${est.days} ngày (hạn mức ${settings.rpd} lượt/ngày; trang tự chạy tiếp khi có lượt mới)`
+      : `khoảng ${est.minutes} phút`;
     card.append(h('div', { class: 'stack' },
-      h('div', {}, `AI: ${est.requests} lượt gọi ${settings.model}, khoảng ${est.minutes} phút · chi phí `,
+      h('div', {}, `AI: ${est.requests} lượt gọi ${settings.model}, ${time} · chi phí `,
         h('b', {}, settings.free ? '$0 (gói miễn phí)' : '≈ ' + usd(est.usd))),
       settings.apiKey ? null : h('p', { class: 'err' }, 'Chưa có key AI → bấm ⚙️ Cài đặt (hướng dẫn lấy key Gemini miễn phí trong README). Phần miễn phí bên dưới vẫn dùng được.'),
       settings.free ? h('p', { class: 'note' }, 'Lưu ý: ở gói miễn phí, Google có thể dùng nội dung gửi lên để cải thiện sản phẩm. Đừng dùng cho tài liệu riêng tư.') : null,
-      rec.parts ? h('p', { class: 'muted' }, `Đã xong ${rec.parts.filter(Boolean).length} đoạn lần trước — chạy tiếp không làm lại.`) : null,
-      h('div', { class: 'row' }, btn), prog, status));
+      h('p', { class: 'note' }, '⏳ Trong lúc AI chạy, giữ tab này mở (để ở nền cũng được). Lỡ đóng thì lần sau mở trang sẽ tự chạy tiếp, phần đã xong không làm lại. Cảnh hiện dần ngay khi từng phần xong.'),
+      rec.parts ? h('p', { class: 'muted' }, `Đã xong ${rec.parts.filter(Boolean).length} phần lần trước, chạy tiếp không làm lại.`) : null,
+      h('div', { class: 'row' }, btn, now), prog, ptext, status));
+    Object.assign(api, {
+      status: t => { status.textContent = t; },
+      progress: (done, total, eta) => { prog.hidden = false; bar.style.width = (100 * done / total) + '%'; ptext.textContent = `Đã xong ${done}/${total} lượt · ${eta}`; },
+      running: on => { btn.disabled = on; now.hidden = on || now.hidden; },
+      paused: () => { now.hidden = false; },
+    });
   }
-  return card;
+  return { card, api };
 }

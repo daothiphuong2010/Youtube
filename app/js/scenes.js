@@ -8,12 +8,14 @@ const OUT_TOKENS_PER_WINDOW = 1600, OVERVIEW_OUT = 900;
 
 // Returns [{from, core, to}] sentence indexes: lines [from, to) are sent,
 // scenes may only start at >= core (lines before core are context only).
-export function makeWindows(sents) {
+// winMin = minutes of audio per AI call (fewer, bigger calls fit a small daily quota).
+export function makeWindows(sents, winMin = 60) {
   const timed = sents.length && sents.every(s => s.t != null);
   const pos = [];
   let acc = 0;
   for (const s of sents) { pos.push(timed ? s.t : acc); acc += s.text.length + 1; }
-  const size = timed ? WINDOW_SEC : WINDOW_CHARS, ov = timed ? OVERLAP_SEC : OVERLAP_CHARS;
+  const k = Math.max(10, +winMin || 60) / 60;
+  const size = timed ? WINDOW_SEC * k : WINDOW_CHARS * k, ov = timed ? OVERLAP_SEC : OVERLAP_CHARS;
   const wins = [];
   let core = 0;
   while (core < sents.length) {
@@ -64,21 +66,34 @@ export function mergeSections(parts, total) {
   return all.map((x, n) => ({ ...x, end: n + 1 < all.length ? all[n + 1].start - 1 : total - 1 }));
 }
 
-// s = settings {free, priceIn, priceOut, rpm}. Free tier -> $0.
+// s = settings {free, priceIn, priceOut, rpm, tpm, rpd, target, winMin}. Free tier -> $0.
+// minutes = at the paced speed (+~20 s AI time per call); days > 1 when the daily quota is smaller.
 export function estimate(sents, s) {
-  const wins = makeWindows(sents);
+  const wins = makeWindows(sents, s.winMin);
   let chars = 0;
   for (const w of wins) chars += sceneUser(sents, w).length + 1500;
   const inTok = Math.round(chars / CHARS_PER_TOKEN) + 3000;
   const outTok = wins.length * OUT_TOKENS_PER_WINDOW + OVERVIEW_OUT;
   const usd = s.free ? 0 : (inTok * (+s.priceIn || 0) + outTok * (+s.priceOut || 0)) / 1e6;
   const requests = wins.length + 1;
-  return { windows: wins.length, requests, minutes: Math.ceil(requests / Math.max(1, +s.rpm || 10)), inTok, outTok, usd };
+  const pct = (+s.target || 80) > 1 ? (+s.target || 80) / 100 : +s.target;
+  const perReq = Math.max(s.rpm ? 60 / Math.max(1, s.rpm * pct) : 0, s.tpm ? 60 * (inTok / requests) / (s.tpm * pct) : 0, 20);
+  const days = +s.rpd ? Math.ceil(requests / +s.rpd) : 1;
+  return { windows: wins.length, requests, minutes: Math.ceil(requests * perReq / 60), days, inTok, outTok, usd };
+}
+
+// Sections found so far, ending where the last finished window ends (for progressive display).
+export function partialSections(sents, parts, winMin) {
+  const wins = makeWindows(sents, winMin);
+  let n = 0;
+  while (n < wins.length && parts?.[n]) n++;
+  return n ? mergeSections(parts.slice(0, n), wins[n - 1].to) : null;
 }
 
 // Run the whole pass. `saved` holds finished windows so an interrupted run resumes free.
-export async function runSections({ sents, rec, mode, ask, glossary = [], saved = {}, onProgress = () => {}, onWindow = () => {} }) {
-  const wins = makeWindows(sents);
+// onWindow(n, part, usage) fires after each window (save it, show its sections right away).
+export async function runSections({ sents, rec, mode, ask, glossary = [], saved = {}, winMin = 60, onProgress = () => {}, onWindow = () => {} }) {
+  const wins = makeWindows(sents, winMin);
   const parts = [];
   const usage = { inTok: saved.inTok || 0, outTok: saved.outTok || 0 };
   for (let n = 0; n < wins.length; n++) {

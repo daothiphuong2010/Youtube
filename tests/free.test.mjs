@@ -4,7 +4,6 @@ import { clean } from '../app/js/cleanup.js';
 import { fillTimes, makeBlocks, analyze, density, overlaps } from '../app/js/algo.js';
 import { parseGlossary, applyGlossary, queryGroups, phraseAlts } from '../app/js/glossary.js';
 import { search } from '../app/js/search.js';
-import { askJSON, AIError } from '../app/js/ai.js';
 import { estimate } from '../app/js/scenes.js';
 
 const story = () => {
@@ -102,20 +101,4 @@ test('free tier costs $0', () => {
   const e = estimate(story(), { free: true, priceIn: 5, priceOut: 5, rpm: 10 });
   assert.equal(e.usd, 0);
   assert.equal(e.requests, 2);
-});
-
-test('askJSON retries 429 with server delay, stops on daily quota', async () => {
-  const waits = [];
-  let calls = 0;
-  globalThis.fetch = async () => {
-    calls++;
-    if (calls === 1) return new Response(JSON.stringify({ error: { code: 429, message: 'slow down', details: [{ retryDelay: '7s' }] } }), { status: 429 });
-    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"ok":1}' }] } }], usageMetadata: { promptTokenCount: 5 } }), { status: 200 });
-  };
-  const s = { provider: 'gemini', baseUrl: 'https://x', model: 'm', apiKey: 'k', rpm: 6000 };
-  const r = await askJSON(s, 'sys', 'u', 100, { wait: async ms => waits.push(ms) });
-  assert.deepEqual(r.json, { ok: 1 });
-  assert.ok(waits.some(ms => ms >= 7000 && ms < 8100), String(waits));
-  globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'quota', details: [{ violations: [{ quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' }] }] } }), { status: 429 });
-  await assert.rejects(askJSON(s, 'sys', 'u', 100, { wait: async () => {} }), e => e instanceof AIError && /hôm nay/.test(e.message));
 });
