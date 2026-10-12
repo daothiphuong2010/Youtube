@@ -36,3 +36,17 @@ export function queryGroups(q, glossary = []) {
   for (const w of rest.split(/\s+/).filter(Boolean)) groups.push([w]);
   return groups;
 }
+
+// Whole phrase -> folded alternatives (for charting a keyword as one unit, not word by word):
+// "Denji cưa máy" with "Đen Di = Denji" -> ["denji cua may", "den di cua may"].
+export function phraseAlts(term, glossary = []) {
+  const alts = new Set([fold(term).replace(/\s+/g, ' ').trim()]);
+  for (const g of glossary) {
+    const names = [g.right, ...g.wrong].map(fold);
+    for (const a of [...alts]) for (const n of names) {
+      if (!(' ' + a + ' ').includes(' ' + n + ' ')) continue;
+      for (const m of names) alts.add((' ' + a + ' ').split(' ' + n + ' ').join(' ' + m + ' ').trim());
+    }
+  }
+  return [...alts].filter(Boolean);
+}

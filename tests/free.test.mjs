@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clean } from '../app/js/cleanup.js';
-import { fillTimes, makeBlocks, analyze, density } from '../app/js/algo.js';
-import { parseGlossary, applyGlossary, queryGroups } from '../app/js/glossary.js';
+import { fillTimes, makeBlocks, analyze, density, overlaps } from '../app/js/algo.js';
+import { parseGlossary, applyGlossary, queryGroups, phraseAlts } from '../app/js/glossary.js';
 import { search } from '../app/js/search.js';
 import { askJSON, AIError } from '../app/js/ai.js';
 import { estimate } from '../app/js/scenes.js';
@@ -24,21 +24,65 @@ test('estimated times for .txt input', () => {
   assert.equal(fillTimes([{ t: null, text: 'a' }], null)[0].t, null);
 });
 
+// Realistic-ish story: fixed filler sentences, names in varied contexts, a phrase spread
+// evenly over the video ("chiến tranh ác ma") and "ác ma" after many different words.
+const story2 = () => {
+  let seed = 7;
+  const rnd = n => { seed = (seed * 1103515245 + 12345) % 2147483648; return Math.floor(seed / 65536) % n; };
+  const pick = a => a[rnd(a.length)];
+  const SENT = ['trời mưa trên phố cũ', 'người qua đường vội vã', 'gió lạnh thổi qua căn phòng nhỏ', 'tiếng chuông vang xa', 'ánh đèn mờ nhạt', 'bóng tối bao trùm', 'cánh cửa khép hờ', 'con đường vắng tanh', 'cô ấy mỉm cười', 'mọi thứ im lặng'];
+  const VERB = ['rơi xuống', 'nổi giận', 'nhìn thấy', 'chạy về phía', 'hét lên với', 'đứng cạnh'];
+  const OBJ = ['máy ảnh', 'bức tranh', 'thanh kiếm', 'cánh cửa', 'tòa nhà'];
+  const lines = [];
+  for (let k = 0; k < 360; k++) {
+    let t = pick(SENT) + ' ' + pick(SENT);
+    if (k % 5 === 0) t += ` ${pick(VERB)} ác ma ${pick(SENT)}`;
+    if (k % 7 === 0) t = `${pick(SENT)} chiến tranh ác ma ${pick(VERB)} ${pick(OBJ)}`;
+    if (k > 100 && k < 200 && k % 3 === 0) t = `${pick(SENT)} đen di ${pick(VERB)} ${pick(OBJ)} ${pick(SENT)}`;
+    if (k > 250 && k % 4 === 0) t = `${pick(SENT)} sharingan ${pick(VERB)} ${pick(SENT)}`;
+    lines.push({ t: k * 10, text: t });
+  }
+  return clean(lines);
+};
+
 test('5-minute blocks, TF-IDF terms, first appearance, density', () => {
-  const sents = story();
+  const sents = story2();
   const blocks = makeBlocks(sents);
   assert.equal(blocks.length, 12);
   const g = parseGlossary('Đen Di, đen đi = Denji');
-  const { blocks: b, top } = analyze(sents, blocks, g);
-  assert.ok(top.includes('denji') || top.some(t => t.includes('denji')), top.join('|'));
-  assert.ok(!b[0].terms.some(t => t.includes('denji')));
-  const firstDenji = b.findIndex(x => x.firsts.some(t => t.includes('denji')));
-  const firstSasuke = b.findIndex(x => x.firsts.some(t => t.includes('sharingan')));
+  const { blocks: b, top, bursty } = analyze(sents, blocks, g);
+  assert.ok(top.includes('denji'), top.join('|'));
+  assert.ok(!b[0].terms.includes('denji'));
+  const firstDenji = b.findIndex(x => x.firsts.includes('denji'));
+  const firstSasuke = b.findIndex(x => x.firsts.includes('sharingan'));
   assert.ok(firstDenji >= 3 && firstDenji <= 4, String(firstDenji));
   assert.ok(firstSasuke >= 8, String(firstSasuke));
+  // No phrase fragments crossing word boundaries, no overlapping terms in one block.
+  const all = new Set([...top, ...b.flatMap(x => x.terms)]);
+  for (const bad of ['tranh ác ma', 'rơi xuống ác', 'nổi giận ác', 'máy ảnh ác', 'ác ma xa', 'tranh ác', 'đèn mờ']) assert.ok(!all.has(bad), bad);
+  for (const x of b) for (const t of x.terms) assert.ok(!x.terms.some(u => u !== t && overlaps(u, t)), x.terms.join('|'));
+  // Chart default: a clustered name, not an evenly spread phrase.
+  assert.ok(['denji', 'sharingan'].includes(bursty[0]), bursty.join('|'));
+  bursty.forEach((t, i) => { if (t.includes('ác ma')) assert.ok(i > bursty.indexOf('denji'), bursty.join('|')); });
   const d = density(sents, blocks, ['sharingan']);
   assert.equal(d.slice(0, 8).reduce((a, x) => a + x, 0), 0);
   assert.ok(d[10] > 0);
+});
+
+test('chart counts a keyword as one whole phrase', () => {
+  const g = parseGlossary('Đen Di = Denji');
+  assert.deepEqual(phraseAlts('Denji cưa máy', g).sort(), ['den di cua may', 'denji cua may']);
+  const sents = [{ text: 'ánh đèn mờ nhạt, đèn sáng' }, { text: 'mạc mấy ác ma. Đen Di cưa máy' }];
+  const u = [{ start: 0, end: 0 }, { start: 1, end: 1 }];
+  assert.deepEqual(density(sents, u, phraseAlts('ánh đèn mờ nhạt')), [1, 0]);
+  assert.deepEqual(density(sents, u, phraseAlts('ác ma')), [0, 1]);
+  assert.deepEqual(density(sents, u, phraseAlts('denji cưa máy', g)), [0, 1]);
+});
+
+test('overlaps: containment and edge overlap', () => {
+  assert.ok(overlaps('chiến tranh ác ma', 'tranh ác'));
+  assert.ok(overlaps('chiến tranh', 'tranh ác ma'));
+  assert.ok(!overlaps('denji', 'sharingan'));
 });
 
 test('glossary: parse, apply, search finds misheard names', () => {

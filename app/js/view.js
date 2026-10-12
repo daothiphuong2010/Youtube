@@ -3,7 +3,7 @@
 import { h, usd } from './dom.js';
 import { buildIndex, search, highlight } from './search.js';
 import { makeBlocks, analyze, density } from './algo.js';
-import { queryGroups } from './glossary.js';
+import { phraseAlts } from './glossary.js';
 import { estimate } from './scenes.js';
 import { densityChart } from './chart.js';
 import { modeOf } from './modes.js';
@@ -19,6 +19,7 @@ export function renderStory(root, rec, sents, { settings, glossary, runAI, saveM
   const blocks = free.blocks;
   const index = scenes ? buildIndex(scenes, CATS) : null;
   let tab = scenes ? 'scenes' : 'blocks', q = '', pick = null; // pick = {name, units:[n]}
+  let chartTerm = null; // keyword clicked to chart; default = most clustered (bursty) keyword
 
   const go = (t, label = '▶ Mở video tại đây') => {
     const href = videoLink(rec, t);
@@ -33,12 +34,18 @@ export function renderStory(root, rec, sents, { settings, glossary, runAI, saveM
     }
   }
 
+  // Keyword chip inside a scene/block: click = show its density chart (without closing the scene).
+  const chartChip = (cls, text, title) => h('button', { class: cls + (text === chartTerm ? ' on' : ''),
+    title: (title ? title + ' · ' : '') + 'Bấm để xem mật độ trên biểu đồ',
+    onclick: e => { e.preventDefault(); e.stopPropagation(); chartTerm = text; drawChart(); chartBox.scrollIntoView({ behavior: 'smooth', block: 'center' }); } },
+  marked(text));
+
   function unitEl(u, n, hit) {
     const isScene = tab === 'scenes';
     const body = h('div', { class: 'body' });
     const chips = isScene
-      ? u.keywords.map(kw => h('span', { class: 'chip c' + Object.keys(CATS).indexOf(kw.category), title: CATS[kw.category] }, marked(kw.text)))
-      : u.terms.map(k => h('span', { class: 'chip' }, marked(k)));
+      ? u.keywords.map(kw => chartChip('chip c' + Object.keys(CATS).indexOf(kw.category), kw.text, CATS[kw.category]))
+      : u.terms.map(k => chartChip('chip', k));
     const d = h('details', { class: 'scene', id: tab + '-' + n },
       h('summary', {},
         h('div', { class: 'row' }, h('span', { class: 'num' }, isScene ? `#${n + 1}` : `Đoạn ${n + 1}`),
@@ -65,17 +72,20 @@ export function renderStory(root, rec, sents, { settings, glossary, runAI, saveM
   }
 
   function drawChart() {
-    const term = q.trim() || pick?.name || free.top[0];
+    const auto = !q.trim() && !chartTerm;
+    const term = q.trim() || chartTerm || free.bursty[0] || free.top[0];
     if (!term) return chartBox.replaceChildren();
-    const counts = density(sents, blocks, queryGroups(term, glossary).flat());
-    chartBox.replaceChildren(h('div', { class: 'muted' }, `Mật độ "${term}" dọc theo video (bấm cột để mở đoạn đó)`),
+    const counts = density(sents, blocks, phraseAlts(term, glossary));
+    chartBox.replaceChildren(h('div', { class: 'muted' }, `Mật độ "${term}" dọc theo video`,
+      auto ? ' (tự chọn từ khóa nổi bật nhất)' : '', ' · bấm cột để mở đoạn đó, bấm từ khóa bất kỳ để đổi',
+      chartTerm && !q.trim() ? h('button', { class: 'chip', onclick: () => { chartTerm = null; drawChart(); } }, '↺ mặc định') : null),
       densityChart(counts, { label: term, onPick: i => { tab = 'blocks'; q = ''; input.value = ''; pick = null; draw();
         const el = document.getElementById('blocks-' + i); if (el) { el.open = true; el.scrollIntoView({ block: 'center' }); } } }));
   }
 
   function chip(cls, name, units, n) {
     const on = pick && pick.name === name && pick.tab === tab;
-    return h('button', { class: 'chip ' + cls + (on ? ' on' : ''), onclick: () => { pick = on ? null : { tab, name, units }; draw(); } },
+    return h('button', { class: 'chip ' + cls + (on ? ' on' : ''), onclick: () => { pick = on ? null : { tab, name, units }; chartTerm = on ? null : name; draw(); } },
       name, ' ', h('small', {}, n));
   }
 
@@ -93,9 +103,9 @@ export function renderStory(root, rec, sents, { settings, glossary, runAI, saveM
   }
 
   function drawTabs() {
-    tabsBox.replaceChildren(
+    tabsBox.replaceChildren(...[
       scenes ? h('button', { class: tab === 'scenes' ? 'on' : '', onclick: () => { tab = 'scenes'; draw(); } }, `🎬 ${mode.unit[0].toUpperCase() + mode.unit.slice(1)} (AI) · ${scenes.length}`) : null,
-      h('button', { class: tab === 'blocks' ? 'on' : '', onclick: () => { tab = 'blocks'; draw(); } }, `⏱ Đoạn 5 phút (miễn phí) · ${blocks.length}`));
+      h('button', { class: tab === 'blocks' ? 'on' : '', onclick: () => { tab = 'blocks'; draw(); } }, `⏱ Đoạn 5 phút (miễn phí) · ${blocks.length}`)].filter(Boolean)); // null would render as text
   }
 
   const input = h('input', { type: 'search', placeholder: '🔎 Tìm nhân vật, sức mạnh, địa điểm, hoặc bất kỳ chữ nào… (gõ không dấu cũng được)',
