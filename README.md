@@ -42,6 +42,7 @@ Không lấy được bản chép lời? Mở bản chép lời trên YouTube, c
 | Điểm + cốt truyện (AI) | Có (miễn phí) | 1 lần gọi nhỏ từ các tóm tắt cảnh |
 | Lưu | Không | Mọi video nằm trong 1 kho cục bộ (IndexedDB). Mở lại = 0 lượt gọi AI |
 
+**👤 Nhân vật** (trung tâm của trang): tự dò miễn phí các tên viết hoa lặp lại (không tính chữ đầu câu, bỏ danh xưng như Anh/Cô/Thứ Hai). Mỗi đoạn 5 phút có 2 hàng: **👤 Nhân vật** (tối đa 5, nhắc nhiều nhất) và **🔑 Từ khóa** (5 từ, không bao giờ là tên). Bảng nhân vật ở đầu trang: bấm tên = biểu đồ tên đó dọc video; ✕ = không phải nhân vật. ⚙️ Cài đặt → *Nhân vật*: mỗi dòng `cách viết khác = Tên đúng | vai trò`, dòng `- Tên` để ẩn; dùng cho mọi video. Phụ đề tự động hay viết thường hết tên: bấm **✨ Lập danh sách nhân vật** (1 lượt Gemini, gửi vài đoạn trích rải đều) để AI liệt kê tên, cách viết nghe nhầm và vai trò.
 **Bảng tên nghe nhầm**: ⚙️ Cài đặt → mỗi dòng `sai, sai = đúng`. Dùng cho tìm kiếm, từ khóa miễn phí, và gửi kèm cho AI.
 **Hạn mức**: ⚙️ Cài đặt → *Hạn mức AI* đã điền sẵn (Gemini Flash miễn phí: 5 lượt/phút, 250.000 token/phút, 20 lượt/ngày). Google không công bố số cố định; số thật của key bạn ở [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit), sửa lại cho khớp nếu khác. Video rất dài mà ít lượt/ngày: tăng *Mỗi lượt AI đọc bao nhiêu phút audio* (vd 120) để cần ít lượt hơn.
 **Đổi AI**: ⚙️ Cài đặt → Gemini (mặc định) / Claude Haiku (trả phí, rất rẻ) / API kiểu OpenAI. Tên model sửa được; **Kiểm tra key** liệt kê model có sẵn.

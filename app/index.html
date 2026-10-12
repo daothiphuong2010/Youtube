@@ -34,6 +34,13 @@
     <label>Bảng tên nghe nhầm (mỗi dòng: <code>sai, sai = đúng</code>)
       <textarea name="glossary" rows="4" placeholder="Đen Di, đen đi = Denji&#10;ma ki ma = Makima"></textarea>
     </label>
+    <details><summary>👤 Nhân vật (dùng cho mọi video: đoạn 5 phút, tìm kiếm, biểu đồ)</summary>
+      <div class="stack">
+        <p class="muted">Mỗi dòng 1 nhân vật: <code>cách viết khác, nghe nhầm = Tên đúng | vai trò</code>. Gộp 2 tên = viết chúng trên cùng 1 dòng. Dòng <code>- Tên</code> = không phải nhân vật, ẩn đi. Tên tự dò vẫn hiện dù không có ở đây.</p>
+        <textarea name="characters" rows="6" placeholder="Đen Di, đen đi = Denji | nhân vật chính, thợ săn quỷ cưa máy&#10;Ma Ki Ma = Makima&#10;- Thứ Hai"></textarea>
+        <div class="row"><button type="button" id="btn-add-detected">＋ Thêm tên tự dò của video đang mở</button><span id="cast-out" class="muted"></span></div>
+      </div>
+    </details>
     <details><summary>Hạn mức AI (đã điền sẵn, chỉ sửa nếu cần)</summary>
       <div class="stack">
         <p class="muted">Trang tự giãn nhịp để không vượt hạn mức, nên chạy chậm mà chắc. Hạn mức thật của key bạn xem ở <a href="https://aistudio.google.com/rate-limit" target="_blank" rel="noopener">aistudio.google.com/rate-limit</a>. Số 0 = không giới hạn.</p>

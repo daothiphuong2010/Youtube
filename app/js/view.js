@@ -2,7 +2,7 @@
 // Timestamps are never shown; every unit, paragraph and search hit links to the video instead.
 import { h, usd } from './dom.js';
 import { buildIndex, search, highlight } from './search.js';
-import { makeBlocks, analyze, density } from './algo.js';
+import { analyze, density } from './algo.js';
 import { phraseAlts } from './glossary.js';
 import { estimate } from './scenes.js';
 import { densityChart } from './chart.js';
@@ -14,14 +14,27 @@ export const videoLink = (rec, t) =>
 // rec = one video record (generic format), sents = its segments with times filled in.
 // partial = sections from the AI chunks finished so far (shown while the AI is still running).
 // Returns {status, progress, sections, running} so a running AI job can update the page in place.
-export function renderStory(root, rec, sents, { settings, glossary, runAI, saveMeta, partial = null }) {
+// people = {blocks, cast, glossary, isName} from names.castFor (characters + their aliases);
+// castActions = {hide(name), edit(), ai()} for the character card.
+export function renderStory(root, rec, sents, { settings, people, castActions = {}, runAI, saveMeta, partial = null }) {
   const mode = modeOf(rec), CATS = mode.categories;
+  const { cast, glossary, isName } = people;
   let scenes = rec.sections || partial;
-  const free = analyze(sents, makeBlocks(sents), glossary);
+  const free = analyze(sents, people.blocks, glossary, 5, isName);
   const blocks = free.blocks;
+  // 👤 row: up to 5 characters most mentioned in each block; note where each one first shows up.
+  blocks.forEach((b, n) => {
+    b.people = cast.filter(c => c.perUnit[n] > 0).sort((x, y) => y.perUnit[n] - x.perUnit[n]).slice(0, 5).map(c => ({ name: c.name, n: c.perUnit[n] }));
+    b.newPeople = [];
+  });
+  for (const c of cast) { const i = c.perUnit.findIndex(x => x > 0); if (i >= 0) blocks[i].newPeople.push(c.name); }
+  const castBy = new Map();
+  for (const c of cast) for (const n of [c.name, ...c.aliases]) castBy.set(n.toLowerCase(), c);
+  const cv = xs => { const m = xs.reduce((a, x) => a + x, 0) / xs.length; return m ? Math.sqrt(xs.reduce((a, x) => a + (x - m) ** 2, 0) / xs.length) / m : 0; };
+  const castBursty = cast.filter(c => c.total >= 10).sort((a, b) => cv(b.perUnit) - cv(a.perUnit))[0]?.name;
   let index = scenes ? buildIndex(scenes, CATS) : null;
   let tab = scenes ? 'scenes' : 'blocks', q = '', pick = null, userTab = false; // pick = {name, units:[n]}
-  let chartTerm = null; // keyword clicked to chart; default = most clustered (bursty) keyword
+  let chartTerm = null; // name/keyword clicked to chart; default = most clustered character (else keyword)
 
   const go = (t, label = '▶ Mở video tại đây') => {
     const href = videoLink(rec, t);
@@ -37,24 +50,27 @@ export function renderStory(root, rec, sents, { settings, glossary, runAI, saveM
   }
 
   // Keyword chip inside a scene/block: click = show its density chart (without closing the scene).
-  const chartChip = (cls, text, title) => h('button', { class: cls + (text === chartTerm ? ' on' : ''),
+  const showChart = text => { chartTerm = text; drawChart(); chartBox.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+  const chartChip = (cls, text, title, extra) => h('button', { class: cls + (text === chartTerm ? ' on' : ''),
     title: (title ? title + ' · ' : '') + 'Bấm để xem mật độ trên biểu đồ',
-    onclick: e => { e.preventDefault(); e.stopPropagation(); chartTerm = text; drawChart(); chartBox.scrollIntoView({ behavior: 'smooth', block: 'center' }); } },
-  marked(text));
+    onclick: e => { e.preventDefault(); e.stopPropagation(); showChart(text); } },
+  marked(text), extra != null ? [' ', h('small', {}, extra)] : null);
 
   function unitEl(u, n, hit) {
     const isScene = tab === 'scenes';
     const body = h('div', { class: 'body' });
     const chips = isScene
-      ? u.keywords.map(kw => chartChip('chip c' + Object.keys(CATS).indexOf(kw.category), kw.text, CATS[kw.category]))
-      : u.terms.map(k => chartChip('chip', k));
+      ? [h('div', { class: 'chips' }, u.keywords.map(kw => chartChip('chip c' + Object.keys(CATS).indexOf(kw.category), kw.text, CATS[kw.category])))]
+      : [u.people.length ? h('div', { class: 'chips' }, h('span', { class: 'lbl' }, '👤 Nhân vật'), u.people.map(p => chartChip('chip c0', p.name, 'Nhắc ' + p.n + ' lần trong đoạn này', p.n))) : null,
+        u.terms.length ? h('div', { class: 'chips' }, h('span', { class: 'lbl' }, '🔑 Từ khóa'), u.terms.map(k => chartChip('chip', k))) : null];
+    const news = isScene ? [] : [...u.newPeople.map(n => '👤 ' + n), ...u.firsts];
     const d = h('details', { class: 'scene', id: tab + '-' + n },
       h('summary', {},
         h('div', { class: 'row' }, h('span', { class: 'num' }, isScene ? `#${n + 1}` : `Đoạn ${n + 1}`),
           isScene ? h('span', { class: 'title' }, marked(u.title)) : null, h('span', { class: 'grow' }), go(sents[u.start].t)),
-        h('div', { class: 'chips' }, chips),
+        chips,
         isScene ? h('div', { class: 'one' }, marked(u.summary)) : null,
-        !isScene && u.firsts.length ? h('div', { class: 'new' }, '🆕 Lần đầu xuất hiện: ' + u.firsts.join(', ')) : null,
+        news.length ? h('div', { class: 'new' }, '🆕 Lần đầu xuất hiện: ' + news.join(', ')) : null,
         hit?.snippet && !hit.kw ? h('div', { class: 'snippet' }, marked(hit.snippet), ' ', go(sents[hit.sent].t, '▶')) : null),
       body);
     d.addEventListener('toggle', () => { if (d.open && !body.childElementCount) bodyOf(u, body); });
@@ -77,11 +93,13 @@ export function renderStory(root, rec, sents, { settings, glossary, runAI, saveM
 
   function drawChart() {
     const auto = !q.trim() && !chartTerm;
-    const term = q.trim() || chartTerm || free.bursty[0] || free.top[0];
+    let term = q.trim() || chartTerm || castBursty || free.bursty[0] || free.top[0];
     if (!term) return chartBox.replaceChildren();
-    const counts = density(sents, blocks, phraseAlts(term, glossary));
-    chartBox.replaceChildren(h('div', { class: 'muted' }, `Mật độ "${term}" dọc theo video`,
-      auto ? ' (tự chọn từ khóa nổi bật nhất)' : '', ' · bấm cột để mở đoạn đó, bấm từ khóa bất kỳ để đổi',
+    const person = castBy.get(term.toLowerCase());
+    if (person) term = person.name;
+    const counts = person ? person.perUnit : density(sents, blocks, phraseAlts(term, glossary));
+    chartBox.replaceChildren(h('div', { class: 'muted' }, `Mật độ ${person ? '👤 ' : ''}"${term}" dọc theo video`,
+      auto ? (person ? ' (tự chọn nhân vật xuất hiện theo từng đợt rõ nhất)' : ' (tự chọn từ khóa nổi bật nhất)') : '', ' · bấm cột để mở đoạn đó, bấm từ khóa bất kỳ để đổi',
       chartTerm && !q.trim() ? h('button', { class: 'chip', onclick: () => { chartTerm = null; drawChart(); } }, '↺ mặc định') : null),
       densityChart(counts, { label: term, onPick: i => { tab = 'blocks'; q = ''; input.value = ''; pick = null; draw();
         const el = document.getElementById('blocks-' + i); if (el) { el.open = true; el.scrollIntoView({ block: 'center' }); } } }));
@@ -115,9 +133,26 @@ export function renderStory(root, rec, sents, { settings, glossary, runAI, saveM
   const input = h('input', { type: 'search', placeholder: '🔎 Tìm nhân vật, sức mạnh, địa điểm, hoặc bất kỳ chữ nào… (gõ không dấu cũng được)',
     oninput: () => { q = input.value; clearTimeout(input._t); input._t = setTimeout(draw, 150); } });
 
+  // Character index: the core of the page. Click a name = chart it across the video.
+  const castStatus = h('div', { class: 'muted' });
+  const castRow = c => h('li', {},
+    h('button', { class: 'chip c0', title: 'Xem mật độ trên biểu đồ', onclick: () => showChart(c.name) }, c.name),
+    c.role ? h('span', {}, ' ' + c.role) : null,
+    h('span', { class: 'muted' }, ` · ${c.total} lần${c.auto ? ' · tự dò' : ''}${c.aliases.length ? ' · còn gọi: ' + c.aliases.slice(0, 4).join(', ') : ''} `),
+    castActions.hide ? h('button', { class: 'x', title: 'Không phải nhân vật: ẩn tên này', onclick: () => castActions.hide(c.name) }, '✕') : null);
+  const castCard = h('div', { class: 'card stack' },
+    h('div', { class: 'row' }, h('b', {}, `👤 Nhân vật (${cast.length})`), h('span', { class: 'grow' }),
+      castActions.edit ? h('button', { onclick: () => castActions.edit() }, '✏️ Sửa danh sách') : null,
+      castActions.ai ? h('button', { title: 'Gửi vài đoạn trích cho Gemini, 1 lượt gọi', onclick: () => castActions.ai() }, '✨ Lập danh sách nhân vật') : null),
+    cast.length ? h('ul', { class: 'cast' }, cast.slice(0, 12).map(castRow)) : h('p', { class: 'muted' },
+      'Chưa tìm thấy tên nào (phụ đề tự động hay viết thường hết). Bấm ✨ để AI lập danh sách (1 lượt), hoặc ✏️ để tự thêm.'),
+    cast.length > 12 ? h('details', {}, h('summary', {}, `Xem thêm ${cast.length - 12} tên`), h('ul', { class: 'cast' }, cast.slice(12).map(castRow))) : null,
+    castStatus);
+
   const top = header(rec, sents, mode, { settings, runAI, saveMeta });
   root.replaceChildren(
     top.card,
+    castCard,
     h('div', { class: 'search' }, input, count),
     h('div', { class: 'card' }, chartBox),
     tabsBox,
@@ -126,6 +161,7 @@ export function renderStory(root, rec, sents, { settings, glossary, runAI, saveM
   draw();
   return {
     ...top.api,
+    castStatus: t => { castStatus.textContent = t; },
     // New AI chunk done: show its scenes now (switch to them once, unless you picked a tab).
     sections(secs) {
       if (!secs || rec.sections) return;

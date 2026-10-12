@@ -27,7 +27,7 @@ export function sceneText(sents, sc) {
   return sents.slice(sc.start, sc.end + 1).map(s => s.text).join(' ');
 }
 
-const unitMeta = u => [u.title, u.summary, ...(u.keywords || []).map(k => k.text), ...(u.terms || [])].filter(Boolean).join(' ');
+const unitMeta = u => [u.title, u.summary, ...(u.keywords || []).map(k => k.text), ...(u.people || []).map(p => p.name), ...(u.terms || [])].filter(Boolean).join(' ');
 
 // Fold each unit once (20h of text) and remember where each sentence starts.
 const prepared = new WeakMap();

@@ -108,7 +108,8 @@ export { overlaps };
 
 // Adds b.terms (top keywords) and b.firsts (recurring terms seen here first) to each block.
 // top = recurring terms by importance; bursty = terms ranked by how clustered they are in time.
-export function analyze(sents, blocks, glossary = [], perBlock = 6) {
+// isName(term) = true for character names: those go to the 👤 row, never into keywords.
+export function analyze(sents, blocks, glossary = [], perBlock = 5, isName = () => false) {
   const blockWords = blocks.map(b => words(applyGlossary(sents.slice(b.start, b.end + 1).map(s => s.text).join(' '), glossary)));
   const valid = makeValid(countAll(blockWords));
   const tfs = blockWords.map(ws => {
@@ -128,7 +129,7 @@ export function analyze(sents, blocks, glossary = [], perBlock = 6) {
   const out = blocks.map((b, i) => {
     const scored = [];
     for (const [k, tf] of tfs[i]) {
-      if (tf < 2) continue;
+      if (tf < 2 || isName(k)) continue;
       const n = k.split(' ').length;
       const sc = tf * Math.log((N + 1) / df.get(k)) * (1 + 0.6 * (n - 1));
       if (sc > 0) scored.push([k, sc]);

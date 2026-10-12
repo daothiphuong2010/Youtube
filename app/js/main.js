@@ -2,18 +2,21 @@
 import { h } from './dom.js';
 import { clean, parseText, parseClock } from './cleanup.js';
 import { runSections, makeWindows, partialSections, estimate } from './scenes.js';
-import { modeOf, DEFAULT_MODE } from './modes.js';
+import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
 import { askJSON, listModels, PRESETS, DayLimit } from './ai.js';
 import { pacerFor } from './pacer.js';
-import { fillTimes } from './algo.js';
+import { fillTimes, makeBlocks } from './algo.js';
 import { parseGlossary } from './glossary.js';
+import { castFor, castGlossary, parseCharacters, mergeCharacters, castUser } from './names.js';
 import { loadSettings, saveSettings, getStory, putStory, patchStory, deleteStory, listStories, listJobs, storyId } from './store.js';
 import { renderStory } from './view.js';
 
 const view = document.getElementById('view');
 const YT_ORIGINS = ['https://www.youtube.com', 'https://m.youtube.com', 'https://youtube.com'];
 let settings = loadSettings();
-const glossary = () => parseGlossary(settings.glossary);
+const plainGlossary = () => parseGlossary(settings.glossary);
+// Misheard words + character aliases: what search, free keywords and the AI all use.
+const glossary = () => [...plainGlossary(), ...castGlossary(parseCharacters(settings.characters).list)];
 
 // ---------- input ----------
 let handled = null;
@@ -162,6 +165,23 @@ async function work(rec, job, ignoreDay) {
   }
 }
 
+// One AI call: sampled excerpts -> [{name, aliases, role}] merged into the Settings list.
+async function aiCast(rec, sents, people) {
+  const say = t => report(rec.id, a => a.castStatus(t));
+  const s = { ...settings };
+  const sys = modeOf(rec).castSystem || MODES.fanfic.castSystem;
+  say('Đang gửi vài đoạn trích cho AI (1 lượt)…');
+  try {
+    const r = await askJSON(s, sys, castUser(sents, people.detected), 3000, { pacer: pacerFor(s), onWait: (sec, why) => say(`Đang chờ ${sec}s (${why})…`) });
+    const found = Array.isArray(r.json?.characters) ? r.json.characters : [];
+    settings = { ...settings, characters: mergeCharacters(settings.characters, found) };
+    saveSettings(settings);
+    if (screen?.id === rec.id) { show(rec); report(rec.id, a => a.castStatus(`✓ AI tìm được ${found.length} nhân vật, đã thêm vào danh sách (⚙️ Cài đặt → Nhân vật để sửa).`)); }
+  } catch (e) {
+    say(e instanceof DayLimit ? `⏸ Hết lượt hôm nay. Thử lại sau ${fmtWhen(e.resumeAt)}.` : '⚠️ ' + e.message);
+  }
+}
+
 // On page open: resume runs that were interrupted or are waiting for a new day.
 async function resumeJobs() {
   for (const r of await listJobs().catch(() => [])) {
@@ -170,10 +190,20 @@ async function resumeJobs() {
   }
 }
 
+let shown = null; // {rec, people} of the story on screen (Settings can copy its detected names)
+
 function show(rec) {
   const sents = fillTimes(rec.segments, rec.duration);
+  const blocks = makeBlocks(sents);
+  const people = { blocks, ...castFor(sents, blocks, settings.characters, plainGlossary()) };
+  shown = { rec, people, sents };
   const api = renderStory(view, rec, sents, {
-    settings, glossary: glossary(),
+    settings, people,
+    castActions: {
+      hide: name => { settings = { ...settings, characters: ((settings.characters || '').trim() + '\n- ' + name).trim() }; saveSettings(settings); show(rec); },
+      edit: () => openSettings('characters'),
+      ai: () => aiCast(rec, sents, people),
+    },
     partial: rec.sections ? null : partialSections(sents, rec.parts, rec.winMin || settings.winMin),
     saveMeta: async (url, dur) => {
       const videoId = parseVideoId(url);
@@ -195,7 +225,7 @@ function show(rec) {
 // ---------- routing ----------
 async function route() {
   const m = location.hash.match(/^#id=(.+)$/);
-  if (!m) { screen = null; return home(); }
+  if (!m) { screen = null; shown = null; return home(); }
   const story = await getStory(decodeURIComponent(m[1])).catch(() => null);
   if (!story) return home('Không tìm thấy truyện này trong máy.');
   show(story);
@@ -215,7 +245,19 @@ function fillForm(s) {
   }
 }
 F.preset.addEventListener('change', () => fillForm({ ...PRESETS[F.preset.value] }));
-document.getElementById('btn-settings').onclick = () => { fillForm(settings); dlg.showModal(); };
+function openSettings(focus) {
+  fillForm(settings);
+  dlg.showModal();
+  if (focus) { const el = F[focus]; el?.closest('details')?.setAttribute('open', ''); el?.focus(); }
+}
+document.getElementById('btn-settings').onclick = () => openSettings();
+// Copy names found in the open video into the character list (then edit/merge by hand).
+document.getElementById('btn-add-detected').onclick = () => {
+  if (!shown) { document.getElementById('cast-out').textContent = 'Mở một video trước đã.'; return; }
+  const before = F.characters.value;
+  F.characters.value = mergeCharacters(before, shown.people.detected);
+  document.getElementById('cast-out').textContent = F.characters.value === before ? 'Không có tên mới.' : 'Đã thêm. Bấm Lưu để dùng.';
+};
 document.getElementById('btn-check').onclick = async () => {
   const out = document.getElementById('check-out');
   out.textContent = 'Đang kiểm tra…';

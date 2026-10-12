@@ -17,6 +17,11 @@ Quy tắc: phần mới (= cảnh) khi đổi bối cảnh/thời gian/xung đ�
     verdictSystem: `Bạn đánh giá một truyện audio dài dựa trên danh sách cảnh (tiêu đề + tóm tắt). Spoil thoải mái. Chỉ trả về JSON:
 {"score":số 1-10 (đáng để tìm hiểu không, ưu tiên worldbuilding/hệ thống sức mạnh độc đáo),"why":"1 câu lý do","plot":["~10 dòng tóm tắt cốt truyện theo thứ tự, mỗi dòng ≤30 từ"]}`,
     verdict: { score: 'Đáng xem (1-10)', why: 'Lý do', lines: 'Cốt truyện' },
+    castSystem: `Bạn đọc vài đoạn trích rải đều từ một truyện audio dài (phụ đề tự động tiếng Việt: tên riêng hay bị nghe nhầm, viết thường hoặc viết sai).
+Liệt kê các NHÂN VẬT có tên (người, quỷ, sinh vật có tên riêng). Không đưa danh xưng chung (anh, cô, ông, thầy…), địa danh, tên chiêu thức.
+Gộp mọi cách viết của cùng một nhân vật: "name" là tên chuẩn (đúng chính tả gốc nếu bạn biết, vd Denji), "aliases" là các cách viết khác/nghe nhầm THẬT SỰ có trong đoạn trích hoặc danh sách ứng viên.
+Tối đa 30 nhân vật, quan trọng trước. Chỉ trả về JSON:
+{"characters":[{"name":"tên chuẩn","aliases":["cách viết khác"],"role":"vai trò ≤12 từ"}]}`,
   },
 
   // Stubs: prompts sketched, not tested yet, hidden from the menu until ready.

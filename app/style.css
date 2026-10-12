@@ -63,3 +63,7 @@ dialog::backdrop { background: #0006; }
 .note { background: var(--accent-bg); border-radius: 8px; padding: 8px 10px; font-size: .9rem; }
 .fields { display: grid; grid-template-columns: 1fr 9em auto; gap: 8px; align-items: end; }
 @media (max-width: 520px) { .fields { grid-template-columns: 1fr; } }
+.chips .lbl { font-size: .8rem; color: var(--muted); align-self: center; min-width: 6.5em; }
+.cast { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.cast li { line-height: 1.6; }
+button.x { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; }
