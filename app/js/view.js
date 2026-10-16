@@ -7,6 +7,7 @@ import { phraseAlts } from './glossary.js';
 import { estimate } from './scenes.js';
 import { densityChart } from './chart.js';
 import { modeOf } from './modes.js';
+import { usesRouter } from './ai-provider.js';
 
 export const videoLink = (rec, t) =>
   rec.video_id && t != null ? `https://youtu.be/${rec.video_id}?t=${Math.max(0, Math.floor(t))}` : null;
@@ -188,7 +189,26 @@ function header(rec, sents, mode, { settings, runAI, saveMeta }) {
     const dur = h('input', { placeholder: 'Thời lượng, vd 20:15:00', value: rec.durationText || '' });
     card.append(h('div', { class: 'fields' }, link, dur, h('button', { onclick: () => saveMeta(link.value, dur.value) }, 'Lưu')));
   }
-  const api = { status() {}, progress() {}, running() {}, paused() {} };
+  // Which AI is answering: a small badge, plus a hidden-by-default list of the model per chunk.
+  const badge = h('span', { class: 'badge', hidden: true });
+  const byList = h('ol', { class: 'muted' });
+  const by = h('details', { hidden: !rec.answeredBy?.length }, h('summary', { class: 'muted' }, 'Model đã trả lời từng phần'), byList);
+  const fillBy = list => {
+    by.hidden = !list?.some(Boolean);
+    byList.replaceChildren(...(list || []).map((x, n) => h('li', {}, x ? `${x.via === 'router' ? 'FreeLLMAPI' : 'Gemini/key trực tiếp'} · ${x.model || '?'}` : '—')));
+  };
+  fillBy(rec.answeredBy);
+  card.append(h('div', { class: 'row' }, badge), by);
+  const api = {
+    status() {}, progress() {}, running() {}, paused() {},
+    route(via, why) {
+      badge.hidden = false;
+      badge.textContent = via === 'router' ? '🔌 Đang dùng FreeLLMAPI' : usesRouter(settings) ? '⚡ Đang dùng Gemini' : '⚡ Gemini (key trực tiếp)';
+      badge.title = why || '';
+      badge.className = 'badge' + (via === 'router' ? ' ok' : '');
+    },
+    answered: fillBy,
+  };
   if (!rec.sections) {
     const est = estimate(sents, { ...settings, winMin: rec.winMin || settings.winMin });
     const status = h('div', { class: 'muted' }), ptext = h('div', { class: 'muted' });
@@ -196,11 +216,12 @@ function header(rec, sents, mode, { settings, runAI, saveMeta }) {
     const btn = h('button', { class: 'primary', onclick: () => runAI() }, rec.parts ? 'Chạy tiếp AI' : `Chia ${mode.unit} + chấm điểm bằng AI`);
     const now = h('button', { hidden: rec.aiJob?.state !== 'day', title: 'Bỏ qua bộ đếm lượt/ngày trong máy và thử gửi ngay (nếu Google còn lượt thì chạy tiếp)',
       onclick: () => runAI({ ignoreDay: true }) }, 'Thử ngay');
-    const time = est.days > 1
+    const time = usesRouter(settings) ? (settings.aiRoute === 'router' ? 'chỉ qua FreeLLMAPI trên máy bạn' : 'qua FreeLLMAPI trên máy bạn (máy tắt hoặc lỗi thì tự dùng Gemini)')
+      : est.days > 1
       ? `khoảng ${est.days} ngày (hạn mức ${settings.rpd} lượt/ngày; trang tự chạy tiếp khi có lượt mới)`
       : `khoảng ${est.minutes} phút`;
     card.append(h('div', { class: 'stack' },
-      h('div', {}, `AI: ${est.requests} lượt gọi ${settings.model}, ${time} · chi phí `,
+      h('div', {}, `AI: ${est.requests} lượt gọi ${usesRouter(settings) ? settings.routerModel : settings.model}, ${time} · chi phí `,
         h('b', {}, settings.free ? '$0 (gói miễn phí)' : '≈ ' + usd(est.usd))),
       settings.apiKey ? null : h('p', { class: 'err' }, 'Chưa có key AI → bấm ⚙️ Cài đặt (hướng dẫn lấy key Gemini miễn phí trong README). Phần miễn phí bên dưới vẫn dùng được.'),
       settings.free ? h('p', { class: 'note' }, 'Lưu ý: ở gói miễn phí, Google có thể dùng nội dung gửi lên để cải thiện sản phẩm. Đừng dùng cho tài liệu riêng tư.') : null,

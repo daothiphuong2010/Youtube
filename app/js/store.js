@@ -1,6 +1,7 @@
 // Local storage: settings in localStorage (small); every video record in one IndexedDB
 // store ("ytscenes"/"stories"), so search can later span all processed videos.
 import { PRESETS, DEFAULT_PRESET } from './ai.js';
+import { ROUTERS } from './ai-provider.js';
 
 const SKEY = 'ytscenes.settings';
 
@@ -10,7 +11,7 @@ export function loadSettings() {
   const preset = s.preset || DEFAULT_PRESET;
   // v1 saved the old Gemini default (10 calls/min), which overloads the free tier: use the new prefill.
   if (!s.v && preset === 'gemini-free' && +s.rpm === 10) delete s.rpm;
-  return { ...PRESETS[preset], preset, apiKey: '', winMin: 60, ...s, v: 2 };
+  return { ...PRESETS[preset], preset, apiKey: '', winMin: 60, aiRoute: 'auto', router: 'freellmapi', routerToken: '', ...ROUTERS.freellmapi.defaults, ...s, v: 2 };
 }
 
 export function saveSettings(s) {
