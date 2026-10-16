@@ -26,6 +26,23 @@
         <option value="custom">Khác (API kiểu OpenAI)</option>
       </select>
     </label>
+    <label>Đường gửi AI
+      <select name="aiRoute">
+        <option value="auto">Tự động: FreeLLMAPI trước, lỗi thì dùng Gemini (mặc định)</option>
+        <option value="router">Chỉ FreeLLMAPI</option>
+        <option value="direct">Chỉ Gemini (key trực tiếp)</option>
+      </select>
+    </label>
+    <details><summary>🔌 FreeLLMAPI trên máy bạn (bỏ trống token = không dùng)</summary>
+      <div class="stack">
+        <label>Địa chỉ <input name="routerUrl" placeholder="http://localhost:3001/v1"></label>
+        <label>Token <input name="routerToken" type="password" autocomplete="off" placeholder="freellmapi-…"></label>
+        <label>Model <input name="routerModel" placeholder="auto:smart"></label>
+        <div class="row"><button type="button" id="btn-router">Kiểm tra kết nối</button></div>
+        <div id="router-out" class="muted"></div>
+        <p class="muted">Lần đầu: thêm <code>https://daothiphuong2010.github.io</code> vào <code>DASHBOARD_ORIGINS</code> của FreeLLMAPI. Chrome hỏi quyền truy cập thiết bị trong mạng cục bộ thì bấm <b>Cho phép</b>.</p>
+      </div>
+    </details>
     <label>API key <input name="apiKey" type="password" autocomplete="off" placeholder="dán key vào đây (lấy miễn phí ở aistudio.google.com)"></label>
     <label>Model <input name="model" list="models" autocomplete="off"></label>
     <datalist id="models"></datalist>

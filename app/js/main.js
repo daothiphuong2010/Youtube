@@ -3,7 +3,8 @@ import { h } from './dom.js';
 import { clean, parseText, parseClock } from './cleanup.js';
 import { runSections, makeWindows, partialSections, estimate } from './scenes.js';
 import { modeOf, DEFAULT_MODE, MODES } from './modes.js';
-import { askJSON, listModels, PRESETS, DayLimit } from './ai.js';
+import { listModels, PRESETS, DayLimit } from './ai.js';
+import { askAI, checkRouter, usesRouter, forgetProbe } from './ai-provider.js';
 import { pacerFor } from './pacer.js';
 import { fillTimes, makeBlocks } from './algo.js';
 import { parseGlossary } from './glossary.js';
@@ -122,34 +123,41 @@ async function work(rec, job, ignoreDay) {
   const parts = rec.parts ? [...rec.parts] : [];
   let usage = { ...(rec.usage || {}) };
   const n0 = parts.filter(Boolean).length, t0 = Date.now();
-  let done = n0;
+  const answeredBy = [...(rec.answeredBy || [])]; // [n] = {via, model}: which AI answered each chunk
+  let done = n0, cur = n0;
   const save = patch => patchStory(rec.id, patch).then(r => Object.assign(rec, r)).catch(() => {});
   await save({ winMin, aiJob: { state: 'running' } });
   const status = t => report(rec.id, a => a.status(t));
   job.progress = () => {
     const left = total - done;
     const per = done > n0 ? (Date.now() - t0) / 1000 / (done - n0) : est.minutes * 60 / est.requests;
-    const dayLeft = ignoreDay ? Infinity : pacer.dayLeft();
+    const dayLeft = ignoreDay || usesRouter(s) ? Infinity : pacer.dayLeft(); // the router has its own quotas
     const eta = left > dayLeft ? `cần thêm ${Math.ceil((left - dayLeft) / Math.max(1, pacer.rpd))} ngày nữa (hạn mức ${pacer.rpd} lượt/ngày)` : `còn khoảng ${fmtDur(left * per)}`;
     report(rec.id, a => { a.running(true); a.progress(done, total, eta); });
     document.title = `(${done}/${total}) ${rec.title || 'Video'} · YT Scenes`;
   };
-  const ask = (sys, user, max) => askJSON(s, sys, user, max, { pacer, ignoreDay, onWait: (sec, why) => status(`Đang chờ ${sec}s (${why})…`) });
+  const ask = async (sys, user, max) => {
+    const r = await askAI(s, sys, user, max, { pacer, ignoreDay, onWait: (sec, why) => status(`Đang chờ ${sec}s (${why})…`),
+      onRoute: (via, why) => report(rec.id, a => a.route(via, why)) });
+    answeredBy[cur] = { via: r.via, model: r.model };
+    report(rec.id, a => a.answered(answeredBy));
+    return r;
+  };
   try {
     const res = await runSections({
       sents, rec, mode: modeOf(rec), ask, glossary: glossary(), winMin,
       saved: { parts, inTok: usage.inTok, outTok: usage.outTok },
-      onProgress: n => { done = n; job.progress(); status(n < total - 1 ? `Đang gửi phần ${n + 1}/${total - 1}…` : 'Đang viết tóm tắt + chấm điểm…'); },
+      onProgress: n => { done = cur = n; job.progress(); status(n < total - 1 ? `Đang gửi phần ${n + 1}/${total - 1}…` : 'Đang viết tóm tắt + chấm điểm…'); },
       onWindow: async (n, part, u) => {
         parts[n] = part; usage = { ...u }; done = n + 1;
-        await save({ parts, usage });
+        await save({ parts, usage, answeredBy });
         report(rec.id, a => a.sections(partialSections(sents, parts, winMin)));
         job.progress();
       },
     });
     res.usage.free = !!s.free;
     res.usage.usd = s.free ? 0 : (res.usage.inTok * s.priceIn + res.usage.outTok * s.priceOut) / 1e6;
-    await save({ ...res, glossary: glossary(), model: s.model, parts: undefined, aiJob: undefined });
+    await save({ ...res, glossary: glossary(), model: s.model, answeredBy, parts: undefined, aiJob: undefined });
     document.title = (rec.title || 'Video') + ' · YT Scenes';
     if (screen?.id === rec.id) show(rec);
   } catch (e) {
@@ -172,7 +180,8 @@ async function aiCast(rec, sents, people) {
   const sys = modeOf(rec).castSystem || MODES.fanfic.castSystem;
   say('Đang gửi vài đoạn trích cho AI (1 lượt)…');
   try {
-    const r = await askJSON(s, sys, castUser(sents, people.detected), 3000, { pacer: pacerFor(s), onWait: (sec, why) => say(`Đang chờ ${sec}s (${why})…`) });
+    const r = await askAI(s, sys, castUser(sents, people.detected), 3000, { pacer: pacerFor(s), onWait: (sec, why) => say(`Đang chờ ${sec}s (${why})…`),
+      onRoute: (via, why) => report(rec.id, a => a.route(via, why)) });
     const found = Array.isArray(r.json?.characters) ? r.json.characters : [];
     settings = { ...settings, characters: mergeCharacters(settings.characters, found) };
     saveSettings(settings);
@@ -185,7 +194,8 @@ async function aiCast(rec, sents, people) {
 // On page open: resume runs that were interrupted or are waiting for a new day.
 async function resumeJobs() {
   for (const r of await listJobs().catch(() => [])) {
-    if (r.aiJob.state === 'running' || (r.aiJob.state === 'day' && r.aiJob.resumeAt <= Date.now())) run(r);
+    // With the local router on, a run paused by Gemini's daily quota can try again right away.
+    if (r.aiJob.state === 'running' || (r.aiJob.state === 'day' && (r.aiJob.resumeAt <= Date.now() || usesRouter(settings)))) run(r);
     else schedule(r);
   }
 }
@@ -251,6 +261,13 @@ function openSettings(focus) {
   if (focus) { const el = F[focus]; el?.closest('details')?.setAttribute('open', ''); el?.focus(); }
 }
 document.getElementById('btn-settings').onclick = () => openSettings();
+document.getElementById('btn-router').onclick = async () => {
+  const out = document.getElementById('router-out');
+  out.textContent = 'Đang kiểm tra…';
+  forgetProbe();
+  const r = await checkRouter({ routerUrl: F.routerUrl.value.trim(), routerToken: F.routerToken.value.trim() });
+  out.textContent = r.text;
+};
 // Copy names found in the open video into the character list (then edit/merge by hand).
 document.getElementById('btn-add-detected').onclick = () => {
   if (!shown) { document.getElementById('cast-out').textContent = 'Mở một video trước đã.'; return; }
@@ -272,7 +289,8 @@ dlg.addEventListener('close', () => {
   if (dlg.returnValue !== 'save') return;
   const f = Object.fromEntries(new FormData(form));
   const num = (k, d) => (f[k] === '' || f[k] == null || Number.isNaN(+f[k]) ? d : +f[k]);
-  settings = { ...f, v: 2, free: F.free.checked, apiKey: (f.apiKey || '').trim(), rpm: num('rpm', 5), tpm: num('tpm', 0), rpd: num('rpd', 0),
+  forgetProbe();
+  settings = { ...f, v: 2, routerToken: (f.routerToken || '').trim(), routerUrl: (f.routerUrl || '').trim(), free: F.free.checked, apiKey: (f.apiKey || '').trim(), rpm: num('rpm', 5), tpm: num('tpm', 0), rpd: num('rpd', 0),
     target: Math.min(100, Math.max(10, num('target', 80))), winMin: Math.max(10, num('winMin', 60)), priceIn: num('priceIn', 0), priceOut: num('priceOut', 0) };
   saveSettings(settings);
   route();
