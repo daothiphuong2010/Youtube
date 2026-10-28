@@ -1,3 +1,12 @@
+# Chưa phát hành — 2026-10-28
+
+- Thêm đọc tiếp có dấu trang và phần ~5 phút, mốc nghe rõ nguồn/ước tính.
+- Thêm thẻ kiến thức có trích nguồn, duyệt nháp và ôn theo lịch local.
+- Thêm backup/restore dữ liệu và xuất TSV cho Anki.
+- Sửa chờ checkpoint AI, báo lỗi ghi và đọc JSON cân bằng.
+- Đưa công cụ phân tích vào vùng mở khi cần, cải thiện focus/contrast/responsive.
+- Chưa deploy; xem STATE.md và TESTING.md cho giới hạn.
+
 # CHANGELOG
 
 | Date | Change |
