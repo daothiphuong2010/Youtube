@@ -1,5 +1,9 @@
 # Chưa phát hành — 2026-10-28
 
+- Thêm sửa/ngừng/tiếp tục ôn thẻ đã duyệt, nháp sửa tự lưu và lịch sử thay đổi; chống ghi từ phiên bản cũ.
+- Quản lý thẻ 10 thẻ/trang; TSV chỉ lấy thẻ đang ôn, backup giữ mọi trạng thái.
+- Gộp 5 câu thành đoạn đọc ngắn, giữ nội dung/chỉ số/mốc; đã thử nguồn truyện thật 21 giờ trong profile local.
+- Nhận WebVTT và thêm ngữ cảnh có giới hạn cho lượt học; siết prompt về ASR/phạm vi phát biểu. Đã thử nguồn VFacts người dùng chọn với 2 nháp chưa duyệt; chưa gọi provider thật.
 - Thêm đọc tiếp có dấu trang và phần ~5 phút, mốc nghe rõ nguồn/ước tính.
 - Thêm thẻ kiến thức có trích nguồn, duyệt nháp và ôn theo lịch local.
 - Thêm backup/restore dữ liệu và xuất TSV cho Anki.

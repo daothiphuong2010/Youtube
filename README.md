@@ -10,10 +10,12 @@ Không có máy chủ: trang tĩnh trên GitHub Pages, key nằm trong trình du
 
 - **Đọc truyện:** mở một phần ~5 phút, trước/sau/chọn phần, bấm **Đọc tiếp từ đây** để nhớ đúng câu. Mốc nghe ghi rõ khi ước tính. Nhân vật, biểu đồ và tìm kiếm mở khi cần.
 - **Học kiến thức:** chọn trong menu cách dùng tài liệu → chọn câu nguồn → tạo nháp → viết câu hỏi/đáp án → duyệt vào lịch ôn. Có thể cất/khôi phục nháp. Ôn phải lộ đáp án trước khi tự đánh giá; lịch đơn giản 1, 3, 6… tối đa 90 ngày, chưa nhớ thì 10 phút. Nghỉ lâu không xóa lịch sử hoặc yêu cầu bù chuỗi ngày.
-- Nút AI học gửi **riêng phần đang đọc**, tối đa 12.000 ký tự, gợi ý tối đa 3 thẻ. Trích dẫn phải khớp nguyên văn và nằm trong phần đã gửi; AI không tự duyệt. Đây chưa phải kiểm chứng tính đúng của phát biểu trong transcript.
+- **Thẻ đã lưu:** mở mục này để sửa, ngừng hoặc tiếp tục ôn. Bản sửa tự lưu qua reload; **Lưu và ôn lại hôm nay** giữ cùng thẻ/nguồn/lịch sử và đưa nội dung đã đổi về hạn hôm nay. Thẻ đang ngừng vẫn ngừng sau khi sửa. Lịch sử có nội dung trước khi sửa; danh sách chia 10 thẻ/trang.
+- Nút AI học gửi **phần đang đọc + tối đa 30 giây ngữ cảnh mỗi phía** (không có mốc: 3 câu), tối đa 12.000 ký tự, gợi ý tối đa 3 thẻ từ phần chính. Trích dẫn phải khớp nguyên văn và nằm trong phần chính; AI không tự duyệt. Đây chưa phải kiểm chứng tính đúng của phát biểu trong transcript.
+- Nhập `.vtt` WebVTT bằng kéo thả hoặc dán nội dung như `.txt`; app bỏ tag và các dòng lặp kiểu phụ đề tự động, giữ mốc nguồn. VTT thủ công không bị xóa những câu lặp có chủ ý.
 - Vị trí, nháp, thẻ và lịch sử nằm trong trường `workspace` của cùng record IndexedDB; DB và nguồn cũ được giữ. Trang chờ ghi khi điều hướng nội bộ và cảnh báo rời trang khi còn chữ chưa lưu được.
 - **Sao lưu tài liệu** trên trang đọc; **Sao lưu và khôi phục dữ liệu** ở kệ cho toàn kho. File không chứa cài đặt/key; nhập bỏ qua id đã có, không merge/ghi đè. Job nhập từ file chỉ tiếp tục khi bấm nút. Dữ liệu Chrome/GitHub Pages và profile local tách theo origin; bản local không tự đọc kho thật.
-- Xuất thẻ đã duyệt ra TSV hai cột câu hỏi/đáp án (kèm nguồn). Trong Anki chọn Basic, phân cách tab và cho phép HTML. Lịch ôn local **không** đi theo TSV; chưa nối hệ Spaced Repetition/n8n hiện có.
+- Xuất thẻ đang ôn ra TSV hai cột câu hỏi/đáp án (kèm nguồn), bỏ qua thẻ đang ngừng. Backup JSON vẫn giữ mọi thẻ. Trong Anki chọn Basic, phân cách tab và cho phép HTML. Lịch ôn local **không** đi theo TSV; chưa nối hệ Spaced Repetition/n8n hiện có.
 
 Chạy thử: tại thư mục repo, `npm run dev`, mở `http://127.0.0.1:3219/`. Cần Python, không cài thêm dependency. Kiểm thử: `npm test`; kiểm tra giao dịch/lỗi trình duyệt ở `tests/browser.html` theo `TESTING.md`. Dữ liệu minh họa chỉ được tạo trong profile kiểm thử, không nhúng vào ứng dụng.
 
