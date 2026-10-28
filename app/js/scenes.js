@@ -102,7 +102,7 @@ export async function runSections({ sents, rec, mode, ask, glossary = [], saved 
     const r = await ask(mode.sectionSystem, sceneUser(sents, wins[n], glossary), 4000);
     usage.inTok += r.inTok; usage.outTok += r.outTok;
     parts.push(normalizeSections(r.json, wins[n], mode.categories));
-    onWindow(n, parts[n], usage);
+    await onWindow(n, parts[n], usage);
   }
   onProgress(wins.length, wins.length);
   const sections = mergeSections(parts, sents.length);

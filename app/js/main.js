@@ -109,7 +109,9 @@ async function run(rec, { ignoreDay = false } = {}) {
   jobs.set(rec.id, job);
   // Only one tab works on a story at a time (two open tabs would double the requests).
   const locked = fn => (navigator.locks ? navigator.locks.request('ytscenes:' + rec.id, { ifAvailable: true }, l => (l ? fn() : null)) : fn());
-  try { await locked(() => work(rec, job, ignoreDay)); } finally { jobs.delete(rec.id); report(rec.id, a => a.running(false)); }
+  try { await locked(() => work(rec, job, ignoreDay)); }
+  catch (e) { report(rec.id, a => a.status('⚠️ ' + e.message)); }
+  finally { jobs.delete(rec.id); report(rec.id, a => a.running(false)); }
 }
 
 async function work(rec, job, ignoreDay) {
@@ -125,7 +127,11 @@ async function work(rec, job, ignoreDay) {
   const n0 = parts.filter(Boolean).length, t0 = Date.now();
   const answeredBy = [...(rec.answeredBy || [])]; // [n] = {via, model}: which AI answered each chunk
   let done = n0, cur = n0;
-  const save = patch => patchStory(rec.id, patch).then(r => Object.assign(rec, r)).catch(() => {});
+  let storageFailed = false;
+  const save = async patch => {
+    try { Object.assign(rec, await patchStory(rec.id, patch)); }
+    catch { storageFailed = true; throw Error('Không lưu được tiến độ vào máy. AI đã dừng; giữ tab mở và sao lưu trước khi thử lại.'); }
+  };
   await save({ winMin, aiJob: { state: 'running' } });
   const status = t => report(rec.id, a => a.status(t));
   job.progress = () => {
@@ -161,6 +167,7 @@ async function work(rec, job, ignoreDay) {
     document.title = (rec.title || 'Video') + ' · YT Scenes';
     if (screen?.id === rec.id) show(rec);
   } catch (e) {
+    if (storageFailed) { status('⚠️ ' + e.message); return; }
     if (e instanceof DayLimit) {
       await save({ aiJob: { state: 'day', resumeAt: e.resumeAt } });
       schedule(rec);
