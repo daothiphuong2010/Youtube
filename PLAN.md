@@ -2,7 +2,10 @@
 
 Mục tiêu: mở lại sau một tuần vẫn đọc tiếp ngay; lấy kiến thức từ transcript thành thẻ có nguồn, do người dùng duyệt.
 
-Giả định đang áp dụng: ưu tiên văn bản chia phần + mở nghe đúng đoạn; ôn ngay trong app và xuất dữ liệu. Câu hỏi về hình minh họa và hệ ôn đích đã gửi, chưa có trả lời.
+## Quyết định đã chốt với người dùng — 28/10/2026
+
+- Truyện dài: muốn cả văn bản và hình minh họa, **ưu tiên văn bản chia phần + mốc nghe trước**. Hình minh họa là giai đoạn sau, không phải yêu cầu bị loại bỏ.
+- Kiến thức: **ôn ngay trong YouTube Scenes**, có thể xuất dữ liệu sau. Lịch ôn trong app là luồng chính; xuất file là tùy chọn, không cần nối hệ Spaced Repetition khác để sử dụng.
 
 ## Phạm vi phiên này
 
@@ -23,7 +26,7 @@ Giả định đang áp dụng: ưu tiên văn bản chia phần + mở nghe đ�
 
 ## Sau phiên này
 
-- Xác nhận cần truyện minh họa hay chỉ văn bản; hình ảnh 60 giờ là hạng mục riêng, phải chốt chi phí và độ nhất quán nhân vật.
-- Chốt hợp đồng tích hợp với hệ ôn hiện có trước khi đồng bộ thật. Hiện chỉ xuất file, không tuyên bố kết nối.
+- Hoàn thiện văn bản + mốc nghe trước; sau đó thiết kế truyện có hình minh họa. Trước khi tạo ảnh cho nội dung dài, cần chốt mật độ cảnh, chi phí và độ nhất quán nhân vật.
+- Hoàn thiện trải nghiệm ôn ngay trong app trước; xuất dữ liệu là tùy chọn. Không xây đồng bộ với hệ ôn khác khi chưa có nhu cầu mới.
 - Đánh giá transcript thực 60 giờ, hiệu suất phân tích từ khóa, worker nền/cancel job, giữ bản phản hồi AI để phục hồi định dạng và tránh gửi lại khi kết quả chưa rõ.
 - Chất lượng kiến thức: transcript là lời của kênh, chưa phải sự thật đã kiểm chứng. Cần bước đối chiếu tài liệu cho nội dung quan trọng.

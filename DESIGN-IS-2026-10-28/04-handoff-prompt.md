@@ -15,7 +15,7 @@ Các ưu tiên:
 
 Các bằng chứng: E1 ảnh panel y208–800 và 162 nhân vật phía dưới, chưa thấy chữ nguồn; E2 vị trí mở chỉ ở DOM; E3 lecture/podcast bị khóa, không có thẻ/lịch; E4 đã có phần 5 phút và liên kết nghe; E5 nuốt lỗi ghi và không await onWindow, parser cắt JSON đầu-cuối; E6 chi phí do setting, timestamp có thể ước tính; E8 60h ≈720 phần nhưng vẽ tất cả cùng lúc.
 
-Phiên hiện tại đã triển khai local ở nhánh codex/reading-and-review. Đọc STATE.md/PLAN.md trước, không làm lại phần đã hoàn thành. Những hạng mục tiếp theo: nội dung thật 60h, chất lượng thẻ từ kênh thật, chỉnh/suspend thẻ, hợp đồng xuất sang hệ ôn hiện có, semantic chapters và tùy chọn hình minh họa sau khi người dùng chốt nhu cầu.
+Phiên hiện tại đã triển khai local ở nhánh codex/reading-and-review. Đọc STATE.md/PLAN.md trước, không làm lại phần đã hoàn thành. Người dùng đã chốt: muốn cả văn bản và hình minh họa nhưng ưu tiên văn bản + mốc nghe trước; ôn ngay trong YouTube Scenes, có thể xuất dữ liệu sau. Những hạng mục tiếp theo: nội dung thật 60h, chất lượng thẻ từ kênh thật, chỉnh/suspend thẻ và semantic chapters. Hình minh họa là giai đoạn sau; chốt mật độ cảnh, chi phí và tính nhất quán nhân vật trước khi tạo hàng loạt. Không xây tích hợp hệ ôn khác theo suy đoán.
 
 Giới hạn: không tự gọi AI, không deploy/push, không tự đồng bộ hay sao chép kho production. Tuân thủ CONFIG/STATE/CORE/UI; pure CORE không DOM. Dùng node --test tests/*.test.mjs và tests/browser.html cho giao dịch/lỗi trình duyệt. Kiểm tra desktop/mobile và nói rõ fixture so với dữ liệu thật.
 ```

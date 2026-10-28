@@ -30,13 +30,18 @@ Mở `http://127.0.0.1:3219/` (nếu server dừng: `npm run dev` trong repo). D
 
 49 test pass, 8 kiểm tra browser/IndexedDB pass; nhớ vị trí/nháp sau reload; fixture 60h gồm 7.200 câu/4,2 triệu ký tự dựng 10 đoạn đang đọc, nhớ phần 720. Desktop có ảnh; layout 390px không tràn ngang qua DOM nhưng screenshot mobile lỗi. Chi tiết trong TESTING.md.
 
-## Còn cần quyết định/nghiệm thu
+## Quyết định đã chốt — 28/10/2026
 
-1. “Xem được” nghĩa là đọc chia phần hay truyện có minh họa? Câu hỏi tùy chọn đã gửi, chưa có trả lời; đang ưu tiên văn bản + mốc nghe.
-2. Ôn trong app, nối hệ Spaced Repetition hiện có hay Anki? Hiện ôn local + TSV, không tự kết nối hệ cũ.
-3. Thử audio/transcript thật dài và 1 kênh kiến thức thật; đánh giá chất lượng AI thực. Chưa gọi provider thật.
-4. Sửa/suspend thẻ đã duyệt, đa tầng semantic chapters, raw response recovery, stop job sau checkpoint, đa thiết bị còn ở lộ trình.
-5. Nếu chốt phát hành: review diff, backup kho thật trên origin hiện tại, chốt đường chuyển dữ liệu, rồi mới push/merge main (workflow tự publish). Có baseline 6ccfaa3; không push main trước khi chốt.
+- Người dùng muốn cả văn bản và hình minh họa cho truyện dài; ưu tiên văn bản + mốc nghe trước, hình minh họa làm sau.
+- Người dùng chọn ôn ngay trong YouTube Scenes, có thể xuất dữ liệu sau. Không cần xây tích hợp với hệ ôn khác cho phạm vi hiện tại.
+- Hai lựa chọn này khớp với bản local đã triển khai; không cần đổi hướng hoặc xây lại.
+
+## Còn cần nghiệm thu/triển khai sau
+
+1. Thử audio/transcript thật dài và 1 kênh kiến thức thật; đánh giá chất lượng AI thực. Chưa gọi provider thật.
+2. Ưu tiên đọc và ôn trong app: sửa/suspend thẻ đã duyệt, chia hồi theo nội dung, phục hồi raw response và dừng job sau checkpoint.
+3. Hình minh họa ở giai đoạn sau: chốt mật độ cảnh, chi phí và cách giữ nhân vật nhất quán trước khi tạo ảnh hàng loạt.
+4. Nếu chốt phát hành: review diff, backup kho thật trên origin hiện tại, chốt đường chuyển dữ liệu, rồi mới push/merge main (workflow tự publish). Có baseline 6ccfaa3; không push main trước khi chốt.
 
 ## Lưu ý tiếp tục
 
