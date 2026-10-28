@@ -25,6 +25,31 @@ document.querySelector('#run').onclick=async()=>{
     check(saved.workspace.cards[0].history.length===1,'Ôn đồng thời không nhân đôi lịch sử');
     const added=await importStories([{id,segments:[{i:0,t:0,text:'Không được ghi đè.'}]}]);
     check(added===0 && (await getStory(id)).segments[0].text===segments[0].text,'Khôi phục bỏ qua id đã có');
+    const editId=crypto.randomUUID();
+    await updateWorkspace(id,{type:'editCard',id:draft.id,draftId:editId,expectedVersion:0});
+    let editing=(await getStory(id)).workspace.draft;
+    editing={...editing,answer:'Các lần ôn được trải ra nhiều ngày.'};
+    await updateWorkspace(id,{type:'draft',draft:editing});
+    check((await getStory(id)).workspace.draft.answer===editing.answer,'Bản sửa thẻ đã duyệt được ghi vào IndexedDB');
+    await Promise.all([updateWorkspace(id,{type:'approve'}),updateWorkspace(id,{type:'approve'})]);
+    saved=await getStory(id);
+    check(saved.workspace.cards.length===1 && saved.workspace.cards[0].history.length===1 && saved.workspace.cards[0].changes.length===1,'Lưu sửa đồng thời giữ cùng id, lịch sử và một thay đổi');
+    let retired=false;try{await updateWorkspace(id,{type:'draft',draft:editing});}catch(e){retired=e.code==='WORKSPACE_VALIDATION';}
+    check(retired && !(await getStory(id)).workspace.draft,'Tab cũ không khôi phục bản sửa đã áp dụng');
+    await updateWorkspace(id,{type:'cardStatus',id:draft.id,status:'suspended',expectedVersion:1});
+    saved=await getStory(id);
+    check(saved.workspace.cards[0].status==='suspended' && saved.workspace.cards[0].history.length===1,'Ngừng ôn vẫn giữ lịch sử');
+    await updateWorkspace(id,{type:'cardStatus',id:draft.id,status:'approved',expectedVersion:2});
+    await updateWorkspace(id,{type:'editCard',id:draft.id,draftId:crypto.randomUUID(),expectedVersion:3});
+    await updateWorkspace(id,{type:'cardStatus',id:draft.id,status:'suspended',expectedVersion:3});
+    let conflict=false;try{await updateWorkspace(id,{type:'approve'});}catch(e){conflict=e.code==='WORKSPACE_VALIDATION';}
+    check(conflict && (await getStory(id)).workspace.draft.editingCardId===draft.id,'Bản sửa cũ bị chặn và vẫn còn trong kho');
+    const conflictRec=await getStory(id);conflictRec.workspace.kind='knowledge';
+    const conflictReader=renderReader(conflictRec,segments,{save:a=>updateWorkspace(id,a),generate:async()=>[],backup:async()=>{}});
+    fixture.replaceChildren(conflictReader);conflictReader.querySelector('.study-editor .primary').click();
+    await new Promise(r=>setTimeout(r,40));
+    check(conflictReader.querySelector('[role=status]').textContent.includes('Thẻ đã thay đổi') && ![...conflictReader.querySelectorAll('button')].find(b=>b.textContent==='Cất nháp này').disabled,'Xung đột không khóa nút cất nháp như lỗi ổ đĩa');
+    conflictReader.dispose();
     const reader=renderReader({id,segments,workspace:{kind:'knowledge',reading:{start:0},draft}},segments,
       {save:async()=>{throw Error('QuotaExceededError mô phỏng');},generate:async()=>{throw Error('AI offline mô phỏng');},backup:async()=>{}});
     fixture.append(reader);
@@ -39,7 +64,16 @@ document.querySelector('#run').onclick=async()=>{
     [...reader2.querySelectorAll('button')].find(b=>b.textContent==='AI gợi ý tối đa 3 thẻ từ phần này').click();
     await new Promise(r=>setTimeout(r,40));
     check(reader2.querySelector('textarea').value===draft.question && reader2.querySelector('[role=status]').textContent.includes('AI offline'),'AI lỗi không làm mất nháp');
-    result.textContent+='HOÀN TẤT 8 kiểm tra. Dữ liệu đều là fixture local.\n';
+    const many=Array.from({length:12},(_,i)=>({...draft,id:'many:'+i,question:'Thẻ kiểm thử '+i,status:'suspended',due:0,interval:0,history:[]}));
+    const paged=renderReader({id,segments,workspace:{kind:'knowledge',reading:{start:0},cards:many}},segments,
+      {save:async()=>{throw Error('Phân trang không được ghi dữ liệu');},generate:async()=>[],backup:async()=>{}});
+    fixture.replaceChildren(paged);paged.querySelector('.card-manager').open=true;
+    await new Promise(r=>setTimeout(r,40));
+    check(paged.querySelectorAll('.saved-card').length===10,'Quản lý thẻ chỉ dựng tối đa 10 thẻ mỗi trang');
+    [...paged.querySelectorAll('button')].find(b=>b.textContent==='Trang thẻ sau').click();
+    check(paged.querySelectorAll('.saved-card').length===2,'Trang tiếp theo có đúng phần thẻ còn lại');
+    check([...paged.querySelectorAll('button')].find(b=>b.textContent==='Xuất thẻ Anki (.tsv)').disabled,'Không xuất TSV rỗng khi mọi thẻ đều ngừng ôn');
+    result.textContent+='HOÀN TẤT 17 kiểm tra. Dữ liệu đều là fixture local.\n';
   } catch(e) {result.textContent+='FAIL '+e.stack;}
 };
 </script></html>

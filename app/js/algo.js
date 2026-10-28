@@ -4,6 +4,17 @@ import { fold } from './text.js';
 import { applyGlossary } from './glossary.js';
 
 export const BLOCK_SEC = 300;
+export const PARAGRAPH_SENTENCES = 5;
+
+// Reading presentation retains sentence offsets for source links and saved positions.
+export function readingParagraphs(sents,range) {
+  const out=[];
+  for(let start=range.start;start<=range.end;start+=PARAGRAPH_SENTENCES) {
+    const end=Math.min(start+PARAGRAPH_SENTENCES-1,range.end);
+    out.push({start,end,t:sents[start].t,text:sents.slice(start,end+1).map(s=>s.text).join(' ')});
+  }
+  return out;
+}
 
 // Edge stopwords: a keyword may contain these inside ("ma vương của biển") but never start/end with them.
 const STOP = new Set(`và là của có không được cho với này đó thì mà những các một hai ba bốn năm sáu bảy tám chín mười trăm nghìn ngàn triệu đã đang sẽ rồi cũng như nhưng vì nên khi lại ra vào lên xuống đi đến tới từ trong ngoài trên dưới để bị bởi tại về theo nếu thế vậy gì nào ai đâu sao bao nhiêu rất quá lắm hơn nhất cả mọi mỗi chỉ vẫn còn đều cùng nữa ấy kia đây nó họ tôi ta mình anh em chị cô cậu ông bà hắn chúng người cái con việc điều sự làm nói thấy biết muốn phải thể nhìn lúc giờ ngay liền đột nhiên thật chính vừa mới hết xong ừ à ạ ơi nhé nha thôi đấy chứ hả hay hoặc rằng tuy dù luôn lần chút ít nhiều tất lấy vâng dạ sau trước giữa bên cạnh hãy đừng chưa từng mất đúng sai lẽ cần nhau ngươi ngài nàng tên kẻ gã vị bạn mày tao chúng_ta có_thể đó_là thế_nào nhưng_mà tức thấy_rằng khiến cho giống trông vẻ hơi khá cực vô cùng hoàn toàn thực sự quả nhiên chắc có_lẽ dường đều đã_từng liệu nữa_là phía lúc_này khi_đó cứ mặc kể cả_hai chẳng không_hề đâu_có thì_ra hóa ra rõ ràng the a an and of to is in it you that i`.split(/[\s_]+/));

@@ -94,6 +94,11 @@ summary { cursor: pointer; }
 .study-editor { padding: 12px 0; }
 .study-review { padding: 18px 0; border-top: 1px solid var(--line); }
 .review-question { font-size: 1.15rem; font-weight: 600; }
+.card-manager { border-top: 1px solid var(--line); padding-top: 14px; }
+.card-manager > summary { min-height: 44px; font-weight: 600; }
+.saved-card { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.saved-card > .row { margin-top: 12px; }
+.saved-card details > summary { min-height: 44px; }
 .explorer { border-top: 1px solid var(--line); padding: 18px 0; }
 .explorer > summary { min-height: 44px; }
 @media (max-width:520px) {

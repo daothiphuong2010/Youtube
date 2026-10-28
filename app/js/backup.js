@@ -24,13 +24,25 @@ export function readBackup(text) {
         throw Error(ERRORS.reading);
       const cardIds=new Set();
       for(const c of all) {
-        if(c.status==='approved' || w.candidates?.includes(c)) validateCards([c],r.segments,{start:0,end:r.segments.length-1});
+        const storedCard=w.cards?.includes(c);
+        if(storedCard || w.candidates?.includes(c)) validateCards([c],r.segments,{start:0,end:r.segments.length-1});
         else if(typeof c.question!=='string' || typeof c.answer!=='string' || typeof c.quote!=='string' || !sourceFor(r.segments,c.start,c.end).quote.includes(c.quote))
           throw Error(ERRORS.draft);
         if(typeof c.id!=='string' || !c.id || cardIds.has(c.id)) throw Error(ERRORS.card);
         cardIds.add(c.id);
-        if(c.status==='approved' && (!Number.isFinite(c.due) || !Number.isFinite(c.interval) || !Array.isArray(c.history)))
+        if(storedCard && (!['approved','suspended'].includes(c.status) || !Number.isFinite(c.due) || !Number.isFinite(c.interval) || !Array.isArray(c.history)
+          || c.version!=null && (!Number.isInteger(c.version) || c.version<0) || c.changes!=null && !Array.isArray(c.changes)))
           throw Error(ERRORS.review);
+        if(storedCard && (!c.history.every(e=>e && typeof e.id==='string' && Number.isFinite(e.at) && ['again','remember'].includes(e.grade))
+          || (c.changes || []).some(e=>!e || !Number.isFinite(e.at) || !['edit','status'].includes(e.type)
+            || e.type==='edit' && (typeof e.before?.question!=='string' || typeof e.before?.answer!=='string' || typeof e.after?.question!=='string' || typeof e.after?.answer!=='string')
+            || e.type==='status' && (!['approved','suspended'].includes(e.before) || !['approved','suspended'].includes(e.after)))))
+          throw Error(ERRORS.review);
+        if(c.editingCardId) {
+          const target=w.cards?.find(x=>x.id===c.editingCardId);
+          if(!target || !Number.isInteger(c.baseVersion) || c.baseVersion<0 || c.start!==target.start || c.end!==target.end || c.quote!==target.quote)
+            throw Error(ERRORS.draft);
+        }
       }
     }
     const record=Object.fromEntries(FIELDS.filter(k=>r[k]!==undefined).map(k=>[k,r[k]]));

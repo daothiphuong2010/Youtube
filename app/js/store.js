@@ -70,14 +70,14 @@ export async function updateWorkspace(id, action) {
         const rec=e.target.result;
         if(!rec) throw Error(STUDY.errors.missing);
         if(action.type==='draft' && action.draft) {
-          if(rec.workspace?.cards?.some(c=>c.id===action.draft.id)) throw Error(STUDY.errors.approvedDraft);
+          if(rec.workspace?.cards?.some(c=>c.id===action.draft.id || c.changes?.some(e=>e.draftId===action.draft.id))) throw Error(STUDY.errors.approvedDraft);
           if(rec.workspace?.draft && rec.workspace.draft.id!==action.draft.id) throw Error(STUDY.errors.otherDraft);
         }
         if(action.type==='approve' && rec.workspace?.draft)
           validateCards([rec.workspace.draft],rec.segments,{start:0,end:rec.segments.length-1});
         out=changeWorkspace(rec.workspace,action,Date.now());
         st.put({...rec,workspace:out,updatedAt:Date.now()});
-      } catch(e) { failure=e; t.abort(); }
+      } catch(e) { if(e.name==='Error')e.code='WORKSPACE_VALIDATION';failure=e; t.abort(); }
     };
     t.oncomplete=()=>ok(out);
     t.onabort=t.onerror=()=>bad(failure || t.error || Error(STUDY.errors.storage));

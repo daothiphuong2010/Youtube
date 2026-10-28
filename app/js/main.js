@@ -10,7 +10,7 @@ import { fillTimes, makeBlocks } from './algo.js';
 import { parseGlossary } from './glossary.js';
 import { castFor, castGlossary, parseCharacters, mergeCharacters, castUser } from './names.js';
 import { loadSettings, saveSettings, getStory, putStory, patchStory, deleteStory, listStories, listJobs, storyId, updateWorkspace, allStories, importStories } from './store.js';
-import { STUDY, validateCards } from './study.js';
+import { STUDY, validateCards, learningInput } from './study.js';
 import { backupText, readBackup } from './backup.js';
 import { downloadText, flushReaderWrites } from './reader.js';
 import { renderStory } from './view.js';
@@ -64,7 +64,7 @@ function bookmarkletHref() {
 async function home(error) {
   const link = h('a', { class: 'bookmarklet', href: '#', onclick: e => { e.preventDefault(); alert('Đừng bấm ở đây — hãy KÉO nút này lên thanh dấu trang (bookmark bar).'); } }, '🎬 YT Scenes');
   bookmarkletHref().then(href => { link.href = href; });
-  const drop = h('div', { class: 'drop' }, 'Hoặc kéo thả file .txt bản chép lời vào đây');
+  const drop = h('div', { class: 'drop' }, 'Hoặc kéo thả file .txt / .vtt bản chép lời vào đây');
   drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('over'));
   drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) readFile(f); });
@@ -249,7 +249,7 @@ function show(rec) {
         return workspace;
       },
       generate: async range => {
-        const excerpt=sents.slice(range.start,range.end+1).map((s,k)=>`${range.start+k}|${s.text}`).join('\n');
+        const excerpt=learningInput(sents,range);
         if(excerpt.length>STUDY.maxChars) throw Error(STUDY.errors.longExcerpt);
         const r=await askAI({...settings},STUDY.system,excerpt,2500,{pacer:pacerFor(settings)});
         return validateCards(r.json?.cards,sents,range);

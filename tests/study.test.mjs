@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sourceFor, validateCards, changeWorkspace, dueCards, cardsTSV } from '../app/js/study.js';
+import { sourceFor, validateCards, changeWorkspace, dueCards, cardsTSV, learningInput } from '../app/js/study.js';
 
 const sents = [{i:0,t:0,text:'Truy hồi chủ động giúp nhận ra điều chưa nhớ.'},{i:1,t:300,text:'Ôn cách quãng trải các lần ôn ra nhiều ngày.'}];
 const draft = {id:'c1',question:'Ôn cách quãng là gì?',answer:'Trải các lần ôn ra nhiều ngày.',start:1,end:1,quote:sents[1].text};
@@ -45,4 +45,13 @@ test('rejected drafts can be archived and restored without entering the review q
   let w=changeWorkspace({}, {type:'draft',draft},1);
   w=changeWorkspace(w,{type:'archive'},2);assert.equal(w.draft,null);assert.equal(dueCards(w,3).length,0);
   w=changeWorkspace(w,{type:'restoreDraft'},3);assert.equal(w.draft.id,draft.id);
+});
+test('learning reads nearby qualifications across the five-minute boundary while cards remain inside the selected part',()=>{
+  const source=[{i:0,t:0,text:'Mở đầu.'},{i:1,t:296,text:'Cờ trắng gắn với đầu hàng.'},{i:2,t:300.32,text:'Không phải ai giơ cờ trắng cũng xin hàng.'},{i:3,t:340,text:'Chủ đề khác ở xa.'}];
+  const input=learningInput(source,{start:0,end:1});
+  assert.ok(input.includes(source[2].text));assert.ok(!input.includes(source[3].text));
+  assert.throws(()=>validateCards([{question:'Hỏi?',answer:'Đáp.',start:2,end:2,quote:source[2].text}],source,{start:0,end:1}),/phạm vi/);
+  const untimed=source.map(s=>({...s,t:null}));
+  assert.ok(learningInput(untimed,{start:1,end:1}).includes(untimed[0].text));
+  assert.ok(!learningInput([{i:0,t:10000,text:'Không ở gần.'},{i:1,t:100,text:'Phần chính.'}],{start:1,end:1}).includes('Không ở gần.'));
 });

@@ -34,6 +34,7 @@ export function stripTimestamps(text) {
 // Plain text (drag-drop .txt or pasted panel) -> [{t, text}].
 // Lines that are only a timestamp set the time for the next lines.
 export function parseText(txt) {
+  if(/^WEBVTT(?:\s|$)/.test(txt.trimStart()))return parseVTT(txt);
   const out = [];
   let t = null;
   for (const raw of txt.split(/\r?\n/)) {
@@ -48,6 +49,34 @@ export function parseText(txt) {
     const sp = parseSpoken(line);
     if (sp !== null) { t = sp; continue; }
     out.push({ t, text: line });
+  }
+  return out;
+}
+
+// CORE: WebVTT input. Only timestamped auto-caption files use rolling-line deduplication.
+const VTT_WORD_TIME=/<\d{1,3}:\d{2}(?::\d{2})?\.\d{3}>/;
+const VTT_ENTITIES={amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:' '};
+export function parseVTT(txt) {
+  const out=[],rolling=VTT_WORD_TIME.test(txt);
+  let previous=[],previousEnd=-1;
+  for(const block of txt.trimStart().split(/\r?\n(?:\r?\n)+/)) {
+    if(/^(NOTE|STYLE|REGION)\b/.test(block.trimStart()))continue;
+    const lines=block.split(/\r?\n/),at=lines.findIndex(l=>l.includes('-->'));
+    if(at<0)continue;
+    const m=lines[at].match(/^([\d:.]+)\s+-->\s+([\d:.]+)/);
+    if(!m)continue;
+    const t=parseClock(m[1]),end=parseClock(m[2]);
+    if(t==null || end==null || end<t)continue;
+    const texts=[];
+    for(const line of lines.slice(at+1)) {
+      const text=line.replace(/<(?:\/?[a-zA-Z][^>]*|\d{1,3}:\d{2}(?::\d{2})?\.\d{3})>/g,'')
+        .replace(/&(amp|lt|gt|quot|apos|nbsp);/g,(_,key)=>VTT_ENTITIES[key]).trim();
+      if(!text)continue;
+      texts.push(text);
+      if(rolling && !VTT_WORD_TIME.test(line) && previous.includes(text) && t<=previousEnd+0.05)continue;
+      out.push({t,text});
+    }
+    previous=texts;previousEnd=end;
   }
   return out;
 }
