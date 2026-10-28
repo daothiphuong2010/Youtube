@@ -9,7 +9,10 @@ import { pacerFor } from './pacer.js';
 import { fillTimes, makeBlocks } from './algo.js';
 import { parseGlossary } from './glossary.js';
 import { castFor, castGlossary, parseCharacters, mergeCharacters, castUser } from './names.js';
-import { loadSettings, saveSettings, getStory, putStory, patchStory, deleteStory, listStories, listJobs, storyId } from './store.js';
+import { loadSettings, saveSettings, getStory, putStory, patchStory, deleteStory, listStories, listJobs, storyId, updateWorkspace, allStories, importStories } from './store.js';
+import { STUDY, validateCards } from './study.js';
+import { backupText, readBackup } from './backup.js';
+import { downloadText, flushReaderWrites } from './reader.js';
 import { renderStory } from './view.js';
 
 const view = document.getElementById('view');
@@ -67,6 +70,20 @@ async function home(error) {
   drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) readFile(f); });
   const paste = h('textarea', { rows: 4, placeholder: '…hoặc dán bản chép lời vào đây' });
   const shelf = h('ul', { class: 'shelf' });
+  const backupStatus=h('p',{class:'muted','role':'status','aria-live':'polite'});
+  const importFile=h('input',{type:'file',accept:'.json,application/json','aria-label':'Chọn bản sao lưu YT Scenes',onchange:async()=>{
+    const file=importFile.files[0];if(!file)return;
+    try {
+      if(file.size>100*1024*1024) throw Error('File vượt 100 MB; chia thành bản sao lưu nhỏ hơn.');
+      const records=readBackup(await file.text());
+      const added=await importStories(records);
+      await home(`Đã khôi phục ${added} tài liệu; bỏ qua ${records.length-added} id đã có. Dữ liệu hiện có được giữ nguyên.`);
+    } catch(e) {backupStatus.textContent='Không nhập được: '+e.message;}
+  }});
+  const backup=h('details',{},h('summary',{},'Sao lưu và khôi phục dữ liệu'),
+    h('p',{class:'muted'},'File chứa nguồn, vị trí đọc, nháp và lịch sử ôn; không chứa cài đặt/key AI. Nhập bỏ qua tài liệu đã có cùng id. Sao lưu các tab sau khi thấy Đã lưu.'),
+    h('button',{onclick:async()=>{try{downloadText('yt-scenes-backup.json',backupText(await allStories()),'application/json');backupStatus.textContent='Đã tạo file sao lưu.';}catch(e){backupStatus.textContent=e.message;}}},'Tải sao lưu toàn bộ'),
+    h('label',{},'Khôi phục từ file JSON',importFile),backupStatus);
   listStories().then(items => shelf.replaceChildren(...(items.length ? items.map(it => h('li', {},
     h('a', { href: '#id=' + encodeURIComponent(it.id) }, `${it.overview ? it.overview.score + '/10 · ' : ''}${it.title || it.id}`),
     it.aiJob ? h('span', { class: 'muted' }, ' · ' + (jobs.has(it.id) || it.aiJob.state === 'running' ? `⏳ AI đang chạy (xong ${it.nParts} phần)`
@@ -82,7 +99,7 @@ async function home(error) {
       h('h2', {}, 'Mỗi lần dùng'), h('div', {}, 'Mở video YouTube → bấm dấu trang 🎬 YT Scenes → trang này tự mở, có ngay mục lục từ khóa miễn phí. Muốn chia cảnh + chấm điểm: bấm nút AI (Gemini miễn phí).')),
     h('div', { class: 'card stack' }, drop, paste,
       h('div', { class: 'row' }, h('span', { class: 'grow' }), h('button', { onclick: () => paste.value.trim() && openInput({ title: 'Dán tay' }, parseText(paste.value)) }, 'Dùng đoạn đã dán'))),
-    h('div', { class: 'card' }, h('h2', {}, '📚 Kệ truyện'), shelf));
+    h('div', { class: 'card' }, h('h2', {}, '📚 Kệ nội dung'), shelf,backup));
 }
 
 // ---------- AI jobs ----------
@@ -165,7 +182,7 @@ async function work(rec, job, ignoreDay) {
     res.usage.usd = s.free ? 0 : (res.usage.inTok * s.priceIn + res.usage.outTok * s.priceOut) / 1e6;
     await save({ ...res, glossary: glossary(), model: s.model, answeredBy, parts: undefined, aiJob: undefined });
     document.title = (rec.title || 'Video') + ' · YT Scenes';
-    if (screen?.id === rec.id) show(rec);
+    await refreshStory(rec);
   } catch (e) {
     if (storageFailed) { status('⚠️ ' + e.message); return; }
     if (e instanceof DayLimit) {
@@ -192,7 +209,7 @@ async function aiCast(rec, sents, people) {
     const found = Array.isArray(r.json?.characters) ? r.json.characters : [];
     settings = { ...settings, characters: mergeCharacters(settings.characters, found) };
     saveSettings(settings);
-    if (screen?.id === rec.id) { show(rec); report(rec.id, a => a.castStatus(`✓ AI tìm được ${found.length} nhân vật, đã thêm vào danh sách (⚙️ Cài đặt → Nhân vật để sửa).`)); }
+    if (screen?.id === rec.id) { await refreshStory(rec); report(rec.id, a => a.castStatus(`✓ AI tìm được ${found.length} nhân vật, đã thêm vào danh sách (⚙️ Cài đặt → Nhân vật để sửa).`)); }
   } catch (e) {
     say(e instanceof DayLimit ? `⏸ Hết lượt hôm nay. Thử lại sau ${fmtWhen(e.resumeAt)}.` : '⚠️ ' + e.message);
   }
@@ -209,23 +226,46 @@ async function resumeJobs() {
 
 let shown = null; // {rec, people} of the story on screen (Settings can copy its detected names)
 
+async function refreshStory(rec) {
+  if(screen?.id!==rec.id || !await flushReaderWrites())return;
+  const latest=await getStory(rec.id);
+  if(screen?.id===rec.id && latest)show(latest);
+}
+
 function show(rec) {
   const sents = fillTimes(rec.segments, rec.duration);
   const blocks = makeBlocks(sents);
-  const people = { blocks, ...castFor(sents, blocks, settings.characters, plainGlossary()) };
-  shown = { rec, people, sents };
+  // Cast scanning is expensive for a 60-hour transcript. Materialize it only for the explorer/settings.
+  let people;
+  const getPeople=()=>people ??= {blocks,...castFor(sents,blocks,settings.characters,plainGlossary())};
+  shown = { rec, get people(){return getPeople();}, sents };
   const api = renderStory(view, rec, sents, {
-    settings, people,
+    settings, get people(){return getPeople();},
+    workspace: {
+      backup: async()=>downloadText('yt-scenes-backup.json',backupText([await getStory(rec.id)]),'application/json'),
+      save: async action => {
+        const workspace=await updateWorkspace(rec.id,action);
+        rec.workspace=workspace;
+        return workspace;
+      },
+      generate: async range => {
+        const excerpt=sents.slice(range.start,range.end+1).map((s,k)=>`${range.start+k}|${s.text}`).join('\n');
+        if(excerpt.length>STUDY.maxChars) throw Error(STUDY.errors.longExcerpt);
+        const r=await askAI({...settings},STUDY.system,excerpt,2500,{pacer:pacerFor(settings)});
+        return validateCards(r.json?.cards,sents,range);
+      },
+    },
     castActions: {
-      hide: name => { settings = { ...settings, characters: ((settings.characters || '').trim() + '\n- ' + name).trim() }; saveSettings(settings); show(rec); },
+      hide: async name => { settings = { ...settings, characters: ((settings.characters || '').trim() + '\n- ' + name).trim() }; saveSettings(settings); await refreshStory(rec); },
       edit: () => openSettings('characters'),
-      ai: () => aiCast(rec, sents, people),
+      ai: () => aiCast(rec, sents, getPeople()),
     },
     partial: rec.sections ? null : partialSections(sents, rec.parts, rec.winMin || settings.winMin),
     saveMeta: async (url, dur) => {
       const videoId = parseVideoId(url);
       const sec = /^\d+(:\d{1,2}){0,2}$/.test(dur.trim()) ? parseClock(dur) : null;
-      show(await patchStory(rec.id, { url: url.trim(), durationText: dur.trim(), ...(videoId ? { video_id: videoId } : {}), ...(sec ? { duration: sec } : {}) }));
+      await patchStory(rec.id, { url: url.trim(), durationText: dur.trim(), ...(videoId ? { video_id: videoId } : {}), ...(sec ? { duration: sec } : {}) });
+      await refreshStory(rec);
     },
     runAI: opts => getStory(rec.id).then(r => run(r || rec, opts)),
   });
@@ -241,6 +281,10 @@ function show(rec) {
 
 // ---------- routing ----------
 async function route() {
+  if(!await flushReaderWrites()) {
+    if(screen?.id)history.replaceState(null,'','#id='+encodeURIComponent(screen.id));
+    return;
+  }
   const m = location.hash.match(/^#id=(.+)$/);
   if (!m) { screen = null; shown = null; return home(); }
   const story = await getStory(decodeURIComponent(m[1])).catch(() => null);

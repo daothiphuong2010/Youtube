@@ -1,0 +1,45 @@
+<!doctype html><html lang="vi"><meta charset="utf-8"><title>YT Scenes — kiểm thử local</title>
+<button id="run">Chạy kiểm thử trình duyệt</button><pre id="result"></pre><div id="fixture"></div>
+<script type="module">
+import {putStory,getStory,updateWorkspace,importStories} from '../app/js/store.js';
+import {renderReader} from '../app/js/reader.js';
+const result=document.querySelector('#result'),fixture=document.querySelector('#fixture');
+const check=(value,name)=>{if(!value)throw Error(name);result.textContent+='PASS '+name+'\n';};
+document.querySelector('#run').onclick=async()=>{
+  result.textContent='';fixture.replaceChildren();
+  try {
+    const id='qa:'+crypto.randomUUID(),segments=[{i:0,t:0,text:'Nguồn thử nghiệm cần được giữ nguyên.'},{i:1,t:300,text:'Ôn cách quãng diễn ra qua nhiều ngày.'}];
+    const draft={id:crypto.randomUUID(),question:'Ôn cách quãng diễn ra khi nào?',answer:'Qua nhiều ngày.',start:1,end:1,quote:segments[1].text};
+    await putStory({id,segments,title:'KIỂM THỬ — không phải kiến thức thật'});
+    await Promise.all([updateWorkspace(id,{type:'reading',start:1}),updateWorkspace(id,{type:'draft',draft})]);
+    let saved=await getStory(id);
+    check(saved.workspace.reading.start===1 && saved.workspace.draft.id===draft.id,'IndexedDB giữ cả vị trí và nháp khi hai giao dịch đồng thời');
+    await Promise.all([updateWorkspace(id,{type:'approve'}),updateWorkspace(id,{type:'approve'})]);
+    saved=await getStory(id);
+    check(saved.workspace.cards.length===1,'Duyệt đồng thời chỉ tạo một thẻ');
+    let blocked=false;try{await updateWorkspace(id,{type:'draft',draft});}catch{blocked=true;}
+    check(blocked,'Tab cũ không thể khôi phục nháp đã được duyệt');
+    const due=saved.workspace.cards[0].due;
+    await Promise.all(['a','b'].map(eventId=>updateWorkspace(id,{type:'review',id:draft.id,eventId,grade:'remember',expectedDue:due})));
+    saved=await getStory(id);
+    check(saved.workspace.cards[0].history.length===1,'Ôn đồng thời không nhân đôi lịch sử');
+    const added=await importStories([{id,segments:[{i:0,t:0,text:'Không được ghi đè.'}]}]);
+    check(added===0 && (await getStory(id)).segments[0].text===segments[0].text,'Khôi phục bỏ qua id đã có');
+    const reader=renderReader({id,segments,workspace:{kind:'knowledge',reading:{start:0},draft}},segments,
+      {save:async()=>{throw Error('QuotaExceededError mô phỏng');},generate:async()=>{throw Error('AI offline mô phỏng');},backup:async()=>{}});
+    fixture.append(reader);
+    const q=reader.querySelector('textarea');q.value='Nháp phải sống qua lỗi lưu';q.dispatchEvent(new Event('input'));
+    await new Promise(r=>setTimeout(r,40));
+    check(q.value==='Nháp phải sống qua lỗi lưu' && reader.querySelector('[role=status]').textContent.includes('Chưa lưu được'),'Lỗi lưu giữ chữ đang gõ và không báo đã lưu');
+    check([...reader.querySelectorAll('button')].find(b=>b.textContent==='AI gợi ý tối đa 3 thẻ từ phần này').disabled,'Chặn AI khi còn chữ chưa lưu được');
+    reader.dispose();
+    const reader2=renderReader({id,segments,workspace:{kind:'knowledge',reading:{start:0},draft}},segments,
+      {save:async()=>({kind:'knowledge',reading:{start:0},draft}),generate:async()=>{throw Error('AI offline mô phỏng');},backup:async()=>{}});
+    fixture.replaceChildren(reader2);
+    [...reader2.querySelectorAll('button')].find(b=>b.textContent==='AI gợi ý tối đa 3 thẻ từ phần này').click();
+    await new Promise(r=>setTimeout(r,40));
+    check(reader2.querySelector('textarea').value===draft.question && reader2.querySelector('[role=status]').textContent.includes('AI offline'),'AI lỗi không làm mất nháp');
+    result.textContent+='HOÀN TẤT 8 kiểm tra. Dữ liệu đều là fixture local.\n';
+  } catch(e) {result.textContent+='FAIL '+e.stack;}
+};
+</script></html>

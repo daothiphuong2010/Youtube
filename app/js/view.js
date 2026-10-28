@@ -8,6 +8,7 @@ import { estimate } from './scenes.js';
 import { densityChart } from './chart.js';
 import { modeOf } from './modes.js';
 import { usesRouter } from './ai-provider.js';
+import { renderReader } from './reader.js';
 
 export const videoLink = (rec, t) =>
   rec.video_id && t != null ? `https://youtu.be/${rec.video_id}?t=${Math.max(0, Math.floor(t))}` : null;
@@ -17,7 +18,23 @@ export const videoLink = (rec, t) =>
 // Returns {status, progress, sections, running} so a running AI job can update the page in place.
 // people = {blocks, cast, glossary, isName} from names.castFor (characters + their aliases);
 // castActions = {hide(name), edit(), ai()} for the character card.
-export function renderStory(root, rec, sents, { settings, people, castActions = {}, runAI, saveMeta, partial = null }) {
+export function renderStory(root, rec, sents, options) {
+  const top=header(rec,sents,modeOf(rec),options);
+  const content=h('div');
+  let explorer=null;
+  const tools=h('details',{class:'explorer'},h('summary',{},'Tìm kiếm, mục lục, nhân vật và biểu đồ'),content);
+  tools.addEventListener('toggle',()=>{
+    if(tools.open && !explorer) explorer=renderExplorer(content,rec,sents,{...options,partial:latest});
+  });
+  let latest=options.partial;
+  root.replaceChildren(top.card,renderReader(rec,sents,{...options.workspace,onKind:top.api.kind}),tools);
+  return {...top.api,
+    castStatus:t=>explorer?.castStatus(t),
+    sections:secs=>{latest=secs;explorer?.sections(secs);},
+  };
+}
+
+function renderExplorer(root, rec, sents, { settings, people, castActions = {}, runAI, saveMeta, partial = null }) {
   const mode = modeOf(rec), CATS = mode.categories;
   const { cast, glossary, isName } = people;
   let scenes = rec.sections || partial;
@@ -150,9 +167,7 @@ export function renderStory(root, rec, sents, { settings, people, castActions = 
     cast.length > 12 ? h('details', {}, h('summary', {}, `Xem thêm ${cast.length - 12} tên`), h('ul', { class: 'cast' }, cast.slice(12).map(castRow))) : null,
     castStatus);
 
-  const top = header(rec, sents, mode, { settings, runAI, saveMeta });
   root.replaceChildren(
-    top.card,
     castCard,
     h('div', { class: 'search' }, input, count),
     h('div', { class: 'card' }, chartBox),
@@ -161,7 +176,6 @@ export function renderStory(root, rec, sents, { settings, people, castActions = 
     list);
   draw();
   return {
-    ...top.api,
     castStatus: t => { castStatus.textContent = t; },
     // New AI chunk done: show its scenes now (switch to them once, unless you picked a tab).
     sections(secs) {
@@ -181,13 +195,15 @@ function header(rec, sents, mode, { settings, runAI, saveMeta }) {
       h('div', { class: 'grow' }, h('h1', {}, rec.title || 'Không có tiêu đề'),
         h('div', { class: 'muted' }, rec.channel || '', rec.video_id ? [rec.channel ? ' · ' : '', h('a', { href: 'https://youtu.be/' + rec.video_id, target: '_blank', rel: 'noopener' }, 'YouTube')] : null))),
     overview?.why ? h('p', {}, h('b', {}, V.why + ': '), overview.why) : null,
-    overview?.plot?.length ? h('details', { open: true }, h('summary', {}, V.lines), h('ol', { class: 'plot' }, overview.plot.map(l => h('li', {}, l)))) : null,
-    usage ? h('p', { class: 'muted' }, `AI đã dùng ${usage.inTok.toLocaleString()} token vào · ${usage.outTok.toLocaleString()} ra · chi phí ${usage.free ? '$0 (miễn phí)' : '≈ ' + usd(usage.usd || 0)}`) : null);
+    overview?.plot?.length ? h('details', {}, h('summary', {}, V.lines), h('ol', { class: 'plot' }, overview.plot.map(l => h('li', {}, l)))) : null);
+  const tools=h('details',{},h('summary',{},'Xử lý AI và thông tin video'));
+  card.append(tools);
+  if(usage) tools.append(h('p',{class:'muted'},`AI đã dùng ${(usage.inTok || 0).toLocaleString()} token vào · ${(usage.outTok || 0).toLocaleString()} ra. Chi phí ước tính theo cấu hình; chưa xác nhận hóa đơn.`));
 
   if (!rec.video_id) {
     const link = h('input', { placeholder: 'Link video YouTube (để có nút Mở video)', value: rec.url || '' });
     const dur = h('input', { placeholder: 'Thời lượng, vd 20:15:00', value: rec.durationText || '' });
-    card.append(h('div', { class: 'fields' }, link, dur, h('button', { onclick: () => saveMeta(link.value, dur.value) }, 'Lưu')));
+    tools.append(h('div', { class: 'fields' }, link, dur, h('button', { onclick: () => saveMeta(link.value, dur.value) }, 'Lưu')));
   }
   // Which AI is answering: a small badge, plus a hidden-by-default list of the model per chunk.
   const badge = h('span', { class: 'badge', hidden: true });
@@ -198,12 +214,13 @@ function header(rec, sents, mode, { settings, runAI, saveMeta }) {
     byList.replaceChildren(...(list || []).map((x, n) => h('li', {}, x ? `${x.via === 'router' ? 'FreeLLMAPI' : 'Gemini/key trực tiếp'} · ${x.model || '?'}` : '—')));
   };
   fillBy(rec.answeredBy);
-  card.append(h('div', { class: 'row' }, badge), by);
+  tools.append(h('div', { class: 'row' }, badge), by);
   const api = {
+    kind:kind=>{tools.hidden=kind==='knowledge';},
     status() {}, progress() {}, running() {}, paused() {},
     route(via, why) {
       badge.hidden = false;
-      badge.textContent = via === 'router' ? '🔌 Đang dùng FreeLLMAPI' : usesRouter(settings) ? '⚡ Đang dùng Gemini' : '⚡ Gemini (key trực tiếp)';
+      badge.textContent = via === 'router' ? 'FreeLLMAPI' : `Key trực tiếp: ${settings.provider} · ${settings.model}`;
       badge.title = why || '';
       badge.className = 'badge' + (via === 'router' ? ' ok' : '');
     },
@@ -220,10 +237,11 @@ function header(rec, sents, mode, { settings, runAI, saveMeta }) {
       : est.days > 1
       ? `khoảng ${est.days} ngày (hạn mức ${settings.rpd} lượt/ngày; trang tự chạy tiếp khi có lượt mới)`
       : `khoảng ${est.minutes} phút`;
-    card.append(h('div', { class: 'stack' },
+    tools.append(h('div', { class: 'stack' },
       h('div', {}, `AI: ${est.requests} lượt gọi ${usesRouter(settings) ? settings.routerModel : settings.model}, ${time} · chi phí `,
-        h('b', {}, settings.free ? '$0 (gói miễn phí)' : '≈ ' + usd(est.usd))),
-      settings.apiKey ? null : h('p', { class: 'err' }, 'Chưa có key AI → bấm ⚙️ Cài đặt (hướng dẫn lấy key Gemini miễn phí trong README). Phần miễn phí bên dưới vẫn dùng được.'),
+        h('b', {}, usesRouter(settings) ? 'chưa rõ qua router' : settings.free ? '$0 theo cấu hình gói miễn phí' : '≈ ' + usd(est.usd)),
+        ' (ước tính theo cấu hình; chưa xác nhận hóa đơn)'),
+      settings.apiKey || usesRouter(settings) && settings.routerToken ? null : h('p', { class: 'err' }, 'Chưa có key AI → bấm ⚙️ Cài đặt (hướng dẫn lấy key Gemini miễn phí trong README). Phần miễn phí bên dưới vẫn dùng được.'),
       settings.free ? h('p', { class: 'note' }, 'Lưu ý: ở gói miễn phí, Google có thể dùng nội dung gửi lên để cải thiện sản phẩm. Đừng dùng cho tài liệu riêng tư.') : null,
       h('p', { class: 'note' }, '⏳ Trong lúc AI chạy, giữ tab này mở (để ở nền cũng được). Lỡ đóng thì lần sau mở trang sẽ tự chạy tiếp, phần đã xong không làm lại. Cảnh hiện dần ngay khi từng phần xong.'),
       rec.parts ? h('p', { class: 'muted' }, `Đã xong ${rec.parts.filter(Boolean).length} phần lần trước, chạy tiếp không làm lại.`) : null,
