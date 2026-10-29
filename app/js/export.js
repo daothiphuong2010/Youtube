@@ -2,6 +2,8 @@
 // A passage ends after about 90 s or 900 characters, so each Ke sach passage (up to ~1200) starts at a [time].
 // The text is never rewritten; sentences are only grouped, so it stays a verbatim source.
 
+import { splitFiller } from './filler.js';
+
 export const PASSAGE_SEC = 90, PASSAGE_CHARS = 900;
 
 export function clock(sec) {
@@ -22,7 +24,8 @@ export function passages(sents) {
   return out.map(p => ({ t: p.t, text: p.parts.join(' ') }));
 }
 
-export function transcriptTxt(rec, sents, now = new Date()) {
+export function transcriptTxt(rec, allSents, now = new Date()) {
+  const { kept: sents, removed } = splitFiller(allSents, rec.duration);
   const timed = sents.length > 0 && sents.every(s => s.t != null);
   const estimated = (rec.segments || []).some(s => s.t == null);
   const head = [
@@ -32,10 +35,12 @@ export function transcriptTxt(rec, sents, now = new Date()) {
     `Exported: ${now.toISOString().slice(0, 10)}`,
     `Caption type: ${rec.captionType || 'unknown'}`,
     `Times: ${!timed ? 'none' : estimated ? 'estimated' : 'from captions'}`,
+    `Removed: ${removed.length} sentences by rule (intro/outro filler, listed at the end)`,
   ];
   const body = passages(sents).map((p, k) => `${k + 1}. ${p.t != null ? `[${clock(p.t)}] ` : ''}${p.text}`);
   // "## " line = a section heading for Ke sach, so the header never merges into the first passage.
-  return head.join('\n') + '\n\n## Bản chép lời\n\n' + body.join('\n\n') + '\n';
+  const gone = removed.length ? '\n## Removed (intro/outro)\n\n' + removed.map(s => `${s.t != null ? `[${clock(s.t)}] ` : ''}${s.text}`).join('\n\n') + '\n' : '';
+  return head.join('\n') + '\n\n## Bản chép lời\n\n' + body.join('\n\n') + '\n' + gone;
 }
 
 // File name from the video title: letters/digits/space/-_ only (Vietnamese letters kept), max 80 chars.
