@@ -16,7 +16,7 @@ test('passages group about every 90 s and keep text verbatim', () => {
 });
 test('export has header, numbered passages with [time], no AI-style rewriting', () => {
   const txt = transcriptTxt(rec, sents, new Date('2026-10-29T10:00:00Z'));
-  assert.match(txt, /^Title: Bài giảng\nChannel: Kênh A\nVideo: https:\/\/www\.youtube\.com\/watch\?v=abcdefghijk\nExported: 2026-10-29\nCaption type: unknown\nTimes: from captions\n\n1\. \[0:00\] Câu số 0\./);
+  assert.match(txt, /^Title: Bài giảng\nChannel: Kênh A\nVideo: https:\/\/www\.youtube\.com\/watch\?v=abcdefghijk\nExported: 2026-10-29\nCaption type: unknown\nTimes: from captions\n\n## Bản chép lời\n\n1\. \[0:00\] Câu số 0\./);
   assert.match(txt, /\n\n2\. \[1:30\] Câu số 3\./);
 });
 test('no times: passages by size, no [time], header says none; estimated flagged', () => {
@@ -31,4 +31,8 @@ test('file name comes from the title, safe and at most 80 chars', () => {
   assert.equal(exportName({ title: '', video_id: 'abcdefghijk' }), 'transcript-abcdefghijk.txt');
   assert.ok(exportName({ title: 'a'.repeat(200) }).length <= 84);
   assert.equal(exportName({ title: '../..\\x' }), 'x.txt');
+});
+test('a passage never exceeds about 900 characters even when speech is fast', () => {
+  const fast = Array.from({ length: 60 }, (_, i) => ({ i, t: i, text: 'x'.repeat(120) }));
+  assert.ok(passages(fast).every(p => p.text.length <= 900 + 121));
 });

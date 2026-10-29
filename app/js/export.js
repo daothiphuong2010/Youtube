@@ -1,4 +1,5 @@
 // Free, code-only transcript export (no AI): header + numbered passages that each start with [m:ss].
+// A passage ends after about 90 s or 900 characters, so each Ke sach passage (up to ~1200) starts at a [time].
 // The text is never rewritten; sentences are only grouped, so it stays a verbatim source.
 
 export const PASSAGE_SEC = 90, PASSAGE_CHARS = 900;
@@ -14,7 +15,7 @@ export function passages(sents) {
   const out = [];
   let cur = null;
   for (const s of sents) {
-    const over = cur && (s.t != null && cur.t != null ? s.t - cur.t >= PASSAGE_SEC : cur.len >= PASSAGE_CHARS);
+    const over = cur && (cur.len >= PASSAGE_CHARS || (s.t != null && cur.t != null && s.t - cur.t >= PASSAGE_SEC));
     if (!cur || over) { cur = { t: s.t, parts: [], len: 0 }; out.push(cur); }
     cur.parts.push(s.text); cur.len += s.text.length + 1;
   }
@@ -33,7 +34,8 @@ export function transcriptTxt(rec, sents, now = new Date()) {
     `Times: ${!timed ? 'none' : estimated ? 'estimated' : 'from captions'}`,
   ];
   const body = passages(sents).map((p, k) => `${k + 1}. ${p.t != null ? `[${clock(p.t)}] ` : ''}${p.text}`);
-  return head.join('\n') + '\n\n' + body.join('\n\n') + '\n';
+  // "## " line = a section heading for Ke sach, so the header never merges into the first passage.
+  return head.join('\n') + '\n\n## Bản chép lời\n\n' + body.join('\n\n') + '\n';
 }
 
 // File name from the video title: letters/digits/space/-_ only (Vietnamese letters kept), max 80 chars.
