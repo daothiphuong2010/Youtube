@@ -4,7 +4,7 @@ import { STUDY, workspaceOf, changeWorkspace, sourceFor, dueCards, cardsTSV, car
 
 // CONFIG
 const COPY = {
-  modeLabel:'Cách dùng tài liệu', backup:'Sao lưu tài liệu', backupDone:'Đã tạo file sao lưu tài liệu.',
+  modeLabel:'Cách dùng tài liệu', backup:'Sao lưu tài liệu', exportTxt:'Tải chữ .txt', backupDone:'Đã tạo file sao lưu tài liệu.',
   archive:'Cất nháp này', archived:'Đã cất nháp; có thể khôi phục khi hết nháp đang mở.',
   restore:'Khôi phục nháp vừa cất', retry:'Thử lưu lại nháp', transcript:'Transcript', nextDue:'Lần ôn tới: ',
   progress:(n,total)=>`Phần ${n+1} / ${total}`,
@@ -42,12 +42,13 @@ export function downloadText(name,text,type='text/plain;charset=utf-8') {
   const a=h('a',{href:url,download:name}); a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 
-export function renderReader(rec,sents,{save,generate,backup,onKind=()=>{}}) {
+export function renderReader(rec,sents,{save,generate,backup,exportTxt,onKind=()=>{}}) {
   // STATE: all interaction data lives here; DOM is only an output.
   const STATE={workspace:workspaceOf(rec.workspace),pending:0,commands:0,saveFailed:false,error:'',notice:'',busy:false,revealed:null,selectedSource:null,renderedPart:null,renderedKind:null,paragraphs:[],managerOpen:false,cardPage:0,queue:Promise.resolve()};
   const blocks=makeBlocks(sents);
   const root=h('section',{class:'reader', 'aria-label':STUDY.reader});
   const heading=h('h2',{},STUDY.reader), status=h('p',{class:'muted','role':'status','aria-live':'polite'});
+  const txtBtn=h('button',{onclick:()=>{try{exportTxt();}catch(e){STATE.error=e.message;UI.render();}}},COPY.exportTxt);
   const backupBtn=h('button',{onclick:async()=>{try{await backup();STATE.notice=COPY.backupDone;}catch(e){STATE.error=e.message;}UI.render();}},COPY.backup);
   const kind=h('select',{'aria-label':COPY.modeLabel,onchange:()=>dispatch({type:'kind',kind:kind.value})},
     h('option',{value:'story'},STUDY.story),h('option',{value:'knowledge'},STUDY.knowledge));
@@ -79,7 +80,7 @@ export function renderReader(rec,sents,{save,generate,backup,onKind=()=>{}}) {
     h('h2',{},STUDY.knowledge),h('p',{class:'muted'},STUDY.sourceNotice),
     h('label',{},STUDY.source,source),h('div',{class:'row'},create,ai),
     h('p',{class:'muted'},STUDY.aiNotice),pending,empty,editor,restore,retry,review,manager,exportBtn);
-  root.append(h('div',{class:'row'},heading,h('span',{class:'grow'}),kind,backupBtn),
+  root.append(h('div',{class:'row'},heading,h('span',{class:'grow'}),kind,txtBtn,backupBtn),
     h('div',{class:'reader-nav'},prev,choose,next),position,timing,status,text,learning);
 
   const partIndex=()=>Math.max(0,blocks.findIndex(b=>STATE.workspace.reading.start<=b.end));

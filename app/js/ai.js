@@ -92,14 +92,14 @@ async function openai(s, system, user, maxTokens) {
 
 const PROVIDERS = { gemini, anthropic, openai };
 
-// Pull the first JSON object out of a reply (tolerates ```json fences).
+// Pull the first complete JSON object out of a reply (tolerates ```json fences, trailing text,
+// and a second block after the real object; a balanced slice that is not valid JSON is skipped).
 export function parseJSON(text) {
   // Braces inside strings/prose must not expand a valid JSON reply.
-  const objects = [];
   let start = -1, depth = 0, quoted = false, escaped = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
-    if (start < 0) { if (c !== '{') continue; start = i; }
+    if (start < 0) { if (c !== '{') continue; start = i; depth = 0; quoted = escaped = false; }
     if (quoted) {
       if (escaped) escaped = false;
       else if (c === '\\') escaped = true;
@@ -107,12 +107,10 @@ export function parseJSON(text) {
     } else if (c === '"') quoted = true;
     else if (c === '{') depth++;
     else if (c === '}' && --depth === 0) {
-      objects.push(JSON.parse(text.slice(start, i + 1))); start = -1;
+      try { return JSON.parse(text.slice(start, i + 1)); } catch { start = -1; }
     }
   }
-  if (objects.length > 1) throw new AIError('AI trả về nhiều đối tượng JSON; cần một đối tượng duy nhất.');
-  if (!objects.length || start >= 0) throw new AIError('AI không trả về JSON đầy đủ.');
-  return objects[0];
+  throw new AIError('AI không trả về JSON đầy đủ.');
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));

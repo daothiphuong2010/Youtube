@@ -99,7 +99,9 @@ export async function runSections({ sents, rec, mode, ask, glossary = [], saved 
   for (let n = 0; n < wins.length; n++) {
     onProgress(n, wins.length);
     if (saved.parts?.[n]) { parts.push(saved.parts[n]); continue; }
-    const r = await ask(mode.sectionSystem, sceneUser(sents, wins[n], glossary), 4000);
+    // A reply that is not valid JSON gets one more try for this window; finished windows stay saved.
+    const askWindow = () => ask(mode.sectionSystem, sceneUser(sents, wins[n], glossary), 4000);
+    const r = await askWindow().catch(e => { if (!/JSON/.test(e?.message || '')) throw e; return askWindow(); });
     usage.inTok += r.inTok; usage.outTok += r.outTok;
     parts.push(normalizeSections(r.json, wins[n], mode.categories));
     await onWindow(n, parts[n], usage);

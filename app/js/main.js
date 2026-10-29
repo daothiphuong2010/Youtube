@@ -14,6 +14,7 @@ import { STUDY, validateCards, learningInput } from './study.js';
 import { backupText, readBackup } from './backup.js';
 import { downloadText, flushReaderWrites } from './reader.js';
 import { renderStory } from './view.js';
+import { transcriptTxt, exportName } from './export.js';
 
 const view = document.getElementById('view');
 const YT_ORIGINS = ['https://www.youtube.com', 'https://m.youtube.com', 'https://youtube.com'];
@@ -243,6 +244,7 @@ function show(rec) {
     settings, get people(){return getPeople();},
     workspace: {
       backup: async()=>downloadText('yt-scenes-backup.json',backupText([await getStory(rec.id)]),'application/json'),
+      exportTxt: ()=>downloadText(exportName(rec),transcriptTxt(rec,sents)),
       save: async action => {
         const workspace=await updateWorkspace(rec.id,action);
         rec.workspace=workspace;
