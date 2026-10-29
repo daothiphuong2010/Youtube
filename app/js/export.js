@@ -36,4 +36,8 @@ export function transcriptTxt(rec, sents, now = new Date()) {
   return head.join('\n') + '\n\n' + body.join('\n\n') + '\n';
 }
 
-export const exportName = rec => (rec.video_id ? `transcript-${rec.video_id}` : 'transcript') + '.txt';
+// File name from the video title: letters/digits/space/-_ only (Vietnamese letters kept), max 80 chars.
+export function exportName(rec) {
+  const base = String(rec.title || '').normalize('NFC').replace(/[^\p{L}\p{N} _-]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 80).trim();
+  return (base || (rec.video_id ? 'transcript-' + rec.video_id : 'transcript')) + '.txt';
+}

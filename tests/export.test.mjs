@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { transcriptTxt, passages, clock } from '../app/js/export.js';
+import { transcriptTxt, passages, clock, exportName } from '../app/js/export.js';
 
 const sents = Array.from({ length: 12 }, (_, i) => ({ i, t: i * 30, text: `Câu số ${i}.` }));
 const rec = { title: 'Bài giảng', channel: 'Kênh A', video_id: 'abcdefghijk', segments: sents };
@@ -25,4 +25,10 @@ test('no times: passages by size, no [time], header says none; estimated flagged
   assert.match(txt, /Times: none/); assert.doesNotMatch(txt, /\[\d/);
   const est = transcriptTxt({ ...rec, segments: none }, sents);
   assert.match(est, /Times: estimated/);
+});
+test('file name comes from the title, safe and at most 80 chars', () => {
+  assert.equal(exportName({ title: 'Bài giảng: Sinh học 12 / "Di truyền"?' }), 'Bài giảng Sinh học 12 Di truyền.txt');
+  assert.equal(exportName({ title: '', video_id: 'abcdefghijk' }), 'transcript-abcdefghijk.txt');
+  assert.ok(exportName({ title: 'a'.repeat(200) }).length <= 84);
+  assert.equal(exportName({ title: '../..\\x' }), 'x.txt');
 });
